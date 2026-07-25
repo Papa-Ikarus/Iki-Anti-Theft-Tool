@@ -1,0 +1,23 @@
+# Android
+android-app/**/build/
+android-app/.gradle/
+android-app/local.properties
+android-app/**/*.iml
+android-app/.idea/
+*.apk
+*.aab
+
+# Firebase secrets - NIEMALS committen
+android-app/app/google-services.json
+functions/serviceAccountKey.json
+dashboard/firebase-config.js
+.firebaserc
+firebase-debug.log
+
+# Node
+functions/node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

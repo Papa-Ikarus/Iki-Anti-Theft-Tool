@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Iki Anti-Theft Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; }
+    #map { height: 60vh; width: 100%; }
+    .controls { padding: 16px; display: flex; gap: 12px; flex-wrap: wrap; }
+    button {
+      padding: 10px 16px; font-size: 15px; border: none; border-radius: 8px;
+      background: #2563eb; color: white; cursor: pointer;
+    }
+    button:hover { background: #1d4ed8; }
+    #status { padding: 0 16px; color: #555; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="controls">
+    <button onclick="trigger('photo')">📷 Foto auslösen</button>
+    <button onclick="trigger('audio')">🎙️ Audio aufnehmen (10s)</button>
+    <button onclick="trigger('location')">📍 Standort aktualisieren</button>
+  </div>
+  <p id="status">Bereit.</p>
+
+  <!-- TODO: eigenen Firebase-Config-Wert einfügen, siehe docs/SETUP.md -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, onSnapshot, collection, query, orderBy, limit }
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getFunctions, httpsCallable }
+      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+
+    // TODO: durch die eigene Firebase-Projektkonfiguration ersetzen
+    const firebaseConfig = {
+      apiKey: "TODO",
+      authDomain: "TODO.firebaseapp.com",
+      projectId: "TODO",
+      storageBucket: "TODO.appspot.com",
+      messagingSenderId: "TODO",
+      appId: "TODO"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const functions = getFunctions(app);
+    const DEVICE_ID = "phone-1";
+
+    let map, marker;
+
+    window.initMap = function () {
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: { lat: 51.5, lng: 7.0 }, // Grobe Startposition (NRW)
+        zoom: 12,
+      });
+    };
+
+    // Live-Update auf den neuesten Standort
+    const locationsQuery = query(
+      collection(db, "devices", DEVICE_ID, "locations"),
+      orderBy("timestamp", "desc"),
+      limit(1)
+    );
+    onSnapshot(locationsQuery, (snapshot) => {
+      snapshot.forEach((docSnap) => {
+        const { lat, lng } = docSnap.data();
+        const pos = { lat, lng };
+        if (!marker) {
+          marker = new google.maps.Marker({ position: pos, map });
+        } else {
+          marker.setPosition(pos);
+        }
+        map.panTo(pos);
+      });
+    });
+
+    window.trigger = async function (command) {
+      document.getElementById("status").textContent = `Sende Befehl: ${command}...`;
+      try {
+        const sendCommand = httpsCallable(functions, "sendCommand");
+        await sendCommand({ deviceId: DEVICE_ID, command });
+        document.getElementById("status").textContent = `Befehl "${command}" gesendet.`;
+      } catch (err) {
+        document.getElementById("status").textContent = `Fehler: ${err.message}`;
+      }
+    };
+  </script>
+
+  <!-- TODO: eigenen Google Maps API-Key einfügen -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=TODO&callback=initMap" async defer></script>
+</body>
+</html>
