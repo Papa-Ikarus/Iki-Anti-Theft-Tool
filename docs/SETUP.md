@@ -80,3 +80,28 @@ mitdeployed. Alternativ einzeln:
 ```bash
 firebase deploy --only firestore:indexes
 ```
+
+## 8. Stealth-Modus
+
+Nach dem ersten Start der App auf dem Zweithandy (Permissions erlauben +
+Firebase-Registrierung) schließt sich die Activity selbst und deaktiviert
+das Launcher-Icon. Die App verschwindet danach aus der App-Schublade.
+
+**Was weiterhin funktioniert:**
+- FCM-Empfang im Hintergrund (keine dauerhaft laufenden Prozesse nötig)
+- Auto-Start nach Neustart via Boot-Receiver
+
+**Während einer Aufnahme (Kamera/Audio):**
+Android 9+ erzwingt eine sichtbare Notification für diese Zeit (~10 Sek.).
+Sie erscheint als "Systemdienst" ganz unten in der Benachrichtigungsleiste,
+ohne Ton oder Vibration. Das ist eine Android-Systemvorschrift und lässt
+sich nicht umgehen.
+
+**App erneut öffnen (z.B. für Updates):**
+```bash
+adb shell am start -n com.ikianti.app/.MainActivity
+```
+Oder den LauncherAlias per ADB wieder aktivieren:
+```bash
+adb shell pm enable com.ikianti.app/.LauncherAlias
+```

