@@ -105,3 +105,44 @@ Oder den LauncherAlias per ADB wieder aktivieren:
 ```bash
 adb shell pm enable com.ikianti.app/.LauncherAlias
 ```
+
+## 9. Täglicher Standort-Bericht (Push auf Handy 1)
+
+Der Bericht läuft als geplante Cloud Function täglich um 20:00 Uhr
+(Europe/Berlin) und schickt eine Push-Notification ans Dashboard-Browser
+auf Handy 1.
+
+### Einmalige Einrichtung auf Handy 1
+
+1. Dashboard im Browser öffnen (Firebase Hosting URL)
+2. Auf "Push-Benachrichtigungen aktivieren" tippen
+3. Browser-Permission erlauben
+4. Fertig – ab jetzt kommt täglich um 20:00 Uhr eine Notification
+
+### VAPID-Key eintragen
+
+Für Web-Push braucht Firebase einen VAPID-Key:
+1. Firebase Console → Projekteinstellungen → Cloud Messaging
+2. Unter "Web-Push-Zertifikate" → "Schlüsselpaar generieren"
+3. Den erzeugten Key in `dashboard/index.html` bei `VAPID_KEY` eintragen
+4. Den gleichen Key in `dashboard/firebase-messaging-sw.js` ist nicht nötig
+   (der SW nutzt die Messaging-Config)
+
+### Was der Bericht enthält
+
+- Anzahl der Standortpunkte des Tages
+- Erster und letzter Zeitpunkt
+- Direktlink zu Google Maps mit der Route (bis zu 10 Wegpunkte)
+
+### Berichte im Dashboard
+
+Die letzten 7 Tagesberichte werden im Dashboard unter "Tagesberichte"
+angezeigt, mit direktem Maps-Link pro Tag.
+
+### Uhrzeit anpassen
+
+In `functions/index.js` die Cron-Zeile ändern:
+```js
+.schedule("0 20 * * *")  // täglich 20:00 Uhr
+.schedule("0 8 * * *")   // täglich 08:00 Uhr
+```

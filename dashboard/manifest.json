@@ -1,0 +1,11 @@
+{
+  "name": "Iki Das Anti Theft Tool",
+  "short_name": "Iki Tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#1e293b",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
