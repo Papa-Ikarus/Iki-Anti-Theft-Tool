@@ -1,75 +1,49 @@
 rules_version = '2';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Iki Das Anti Theft Tool – Firestore-Sicherheitsregeln
-//
-// Strategie: Nur ein einziger authentifizierter Nutzer (der Besitzer) darf
-// alles lesen und schreiben. Alle anderen – auch andere eingeloggte Nutzer –
-// haben keinerlei Zugriff.
-//
-// Einrichtung:
-//   1. Firebase Auth aktivieren (Email/Passwort reicht)
-//   2. Einmal einloggen und die eigene UID ermitteln (Firebase Console →
-//      Authentication → Users → UID-Spalte), z. B. "abc123xyz..."
-//   3. In der Zeile OWNER_UID die Platzhalter-UID durch deine echte ersetzen
-//   4. Regeln in der Firebase Console deployen:
-//      firebase deploy --only firestore:rules
-// ─────────────────────────────────────────────────────────────────────────────
-
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Hilfsfunktionen ──────────────────────────────────────────────────────
-
-    // Ist der anfragende Nutzer eingeloggt?
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-
-    // Ist der anfragende Nutzer der Besitzer?
-    // TODO: "DEINE-FIREBASE-UID-HIER" durch die echte UID aus der
-    //       Firebase Console ersetzen (Authentication → Users → UID-Spalte).
+    // TODO: "DEINE-FIREBASE-UID-HIER" ersetzen (siehe docs/SETUP.md)
     function isOwner() {
-      return isAuthenticated() &&
+      return request.auth != null &&
              request.auth.uid == "DEINE-FIREBASE-UID-HIER";
     }
 
     // ── Geräte-Dokumente ─────────────────────────────────────────────────────
-    // devices/{deviceId}
-    //   Felder: fcmToken (string), lastSeen (timestamp)
     match /devices/{deviceId} {
       allow read, write: if isOwner();
 
-      // ── Standort-Unterkollektion ──────────────────────────────────────────
-      // devices/{deviceId}/locations/{locationId}
-      //   Felder: lat (number), lng (number), timestamp (number)
       match /locations/{locationId} {
         allow read: if isOwner();
-
-        // Schreiben erlaubt für:
-        //   a) den Besitzer selbst (Dashboard)
-        //   b) die Android-App, die als Gerät (eigene UID) eingeloggt ist
-        //      und nur lat/lng/timestamp schreibt – keine anderen Felder
         allow create: if isOwner() ||
-          (isAuthenticated() &&
+          (request.auth != null &&
            request.auth.uid == deviceId &&
            request.resource.data.keys().hasOnly(["lat", "lng", "timestamp"]) &&
            request.resource.data.lat is number &&
            request.resource.data.lng is number &&
            request.resource.data.timestamp is number);
-
-        // Nachträgliche Änderungen von Standorten sind nicht erlaubt
         allow update, delete: if isOwner();
       }
 
-      // ── Foto-Metadaten (optional) ─────────────────────────────────────────
-      // Fotos/Audio landen in Storage; hier nur optionale Metadaten
       match /captures/{captureId} {
         allow read: if isOwner();
         allow create: if isOwner() ||
-          (isAuthenticated() && request.auth.uid == deviceId);
+          (request.auth != null && request.auth.uid == deviceId);
         allow update, delete: if isOwner();
       }
+    }
+
+    // ── Tagesberichte (nur lesen für Owner, schreiben nur Cloud Function) ────
+    // Cloud Functions laufen als Admin und umgehen diese Regeln sowieso.
+    // Die Regel hier schützt vor direktem Client-Schreiben.
+    match /reports/{reportId} {
+      allow read: if isOwner();
+      allow write: if false;   // nur Cloud Function (Admin SDK) darf schreiben
+    }
+
+    // ── Owner-Gerät (Dashboard / Handy 1 – Web-Push-Token) ──────────────────
+    match /owner/{docId} {
+      allow read, write: if isOwner();
     }
 
     // ── Alles andere: kein Zugriff ────────────────────────────────────────────

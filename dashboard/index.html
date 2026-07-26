@@ -2,93 +2,211 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Iki Anti-Theft Dashboard</title>
+  <title>Iki Das Anti Theft Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="manifest" href="/manifest.json" />
   <style>
-    body { font-family: system-ui, sans-serif; margin: 0; }
-    #map { height: 60vh; width: 100%; }
-    .controls { padding: 16px; display: flex; gap: 12px; flex-wrap: wrap; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f1f5f9; }
+    header {
+      background: #1e293b; color: white;
+      padding: 14px 16px; font-size: 18px; font-weight: 600;
+    }
+    #map { height: 55vh; width: 100%; }
+    .card {
+      background: white; margin: 12px; border-radius: 10px;
+      padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+    }
+    .card h3 { font-size: 13px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    .controls { display: flex; gap: 10px; flex-wrap: wrap; }
     button {
-      padding: 10px 16px; font-size: 15px; border: none; border-radius: 8px;
+      flex: 1; min-width: 120px; padding: 10px 8px;
+      font-size: 14px; border: none; border-radius: 8px;
       background: #2563eb; color: white; cursor: pointer;
     }
     button:hover { background: #1d4ed8; }
-    #status { padding: 0 16px; color: #555; }
+    button.secondary { background: #475569; }
+    button.secondary:hover { background: #334155; }
+    #status { font-size: 13px; color: #475569; margin-top: 10px; }
+    .report-item {
+      padding: 10px 0; border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+    }
+    .report-item:last-child { border-bottom: none; }
+    .report-item a { color: #2563eb; text-decoration: none; font-weight: 500; }
+    .report-meta { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+    #push-banner {
+      background: #fef3c7; border: 1px solid #fcd34d;
+      border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+      font-size: 13px; display: none;
+    }
   </style>
 </head>
 <body>
+  <header>📍 Iki Das Anti Theft Tool</header>
+
   <div id="map"></div>
-  <div class="controls">
-    <button onclick="trigger('photo')">📷 Foto auslösen</button>
-    <button onclick="trigger('audio')">🎙️ Audio aufnehmen (10s)</button>
-    <button onclick="trigger('location')">📍 Standort aktualisieren</button>
+
+  <div class="card">
+    <h3>Steuerung</h3>
+    <div id="push-banner">
+      🔔 Push-Benachrichtigungen aktivieren, um den täglichen Bericht zu empfangen.
+      <button onclick="registerWebPush()" style="margin-top:8px;flex:none;min-width:auto;padding:6px 12px;font-size:13px;">Jetzt aktivieren</button>
+    </div>
+    <div class="controls">
+      <button onclick="trigger('photo')">📷 Foto</button>
+      <button onclick="trigger('audio')">🎙️ Audio (10s)</button>
+      <button onclick="trigger('location')">📍 Standort</button>
+    </div>
+    <div id="status">Bereit.</div>
   </div>
-  <p id="status">Bereit.</p>
 
-  <!-- TODO: eigenen Firebase-Config-Wert einfügen, siehe docs/SETUP.md -->
+  <div class="card">
+    <h3>Tagesberichte</h3>
+    <div id="reports-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
+  </div>
+
+  <!-- TODO: eigene Firebase-Config eintragen, siehe docs/SETUP.md -->
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, onSnapshot, collection, query, orderBy, limit }
-      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, where }
+                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    import { getMessaging, getToken, onMessage }
+                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
     import { getFunctions, httpsCallable }
-      from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
+    import { setDoc }                  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    // TODO: durch die eigene Firebase-Projektkonfiguration ersetzen
+    // TODO: durch eigene Firebase-Projektkonfiguration ersetzen
     const firebaseConfig = {
       apiKey: "TODO",
       authDomain: "TODO.firebaseapp.com",
       projectId: "TODO",
       storageBucket: "TODO.appspot.com",
       messagingSenderId: "TODO",
-      appId: "TODO"
+      appId: "TODO",
+      // TODO: VAPID-Key aus Firebase Console → Projekteinstellungen →
+      //       Cloud Messaging → Web-Push-Zertifikate
     };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const functions = getFunctions(app);
+    const VAPID_KEY = "TODO_VAPID_KEY";
     const DEVICE_ID = "phone-1";
 
-    let map, marker;
+    const app       = initializeApp(firebaseConfig);
+    const db        = getFirestore(app);
+    const messaging = getMessaging(app);
+    const functions = getFunctions(app);
 
+    // Service Worker registrieren (nötig für Web-Push im Hintergrund)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/firebase-messaging-sw.js")
+        .then(reg => console.log("SW registriert:", reg.scope))
+        .catch(err => console.error("SW-Fehler:", err));
+    }
+
+    // Push-Banner zeigen wenn noch keine Permission
+    if (Notification.permission !== "granted") {
+      document.getElementById("push-banner").style.display = "block";
+    }
+
+    // ── Karte ──────────────────────────────────────────────────────────────
+    let map, marker;
     window.initMap = function () {
       map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 51.5, lng: 7.0 }, // Grobe Startposition (NRW)
+        center: { lat: 51.5, lng: 7.0 },
         zoom: 12,
+        mapTypeControl: false,
+        streetViewControl: false,
       });
     };
 
-    // Live-Update auf den neuesten Standort
-    const locationsQuery = query(
+    // Live-Standort-Update
+    const locQ = query(
       collection(db, "devices", DEVICE_ID, "locations"),
-      orderBy("timestamp", "desc"),
-      limit(1)
+      orderBy("timestamp", "desc"), limit(1)
     );
-    onSnapshot(locationsQuery, (snapshot) => {
-      snapshot.forEach((docSnap) => {
-        const { lat, lng } = docSnap.data();
+    onSnapshot(locQ, snap => {
+      snap.forEach(d => {
+        const { lat, lng } = d.data();
         const pos = { lat, lng };
-        if (!marker) {
-          marker = new google.maps.Marker({ position: pos, map });
-        } else {
-          marker.setPosition(pos);
-        }
+        if (!marker) marker = new google.maps.Marker({ position: pos, map });
+        else marker.setPosition(pos);
         map.panTo(pos);
       });
     });
 
+    // ── Steuerung ──────────────────────────────────────────────────────────
     window.trigger = async function (command) {
-      document.getElementById("status").textContent = `Sende Befehl: ${command}...`;
+      document.getElementById("status").textContent = `⏳ Sende ${command}…`;
       try {
-        const sendCommand = httpsCallable(functions, "sendCommand");
-        await sendCommand({ deviceId: DEVICE_ID, command });
-        document.getElementById("status").textContent = `Befehl "${command}" gesendet.`;
+        await httpsCallable(functions, "sendCommand")({ deviceId: DEVICE_ID, command });
+        document.getElementById("status").textContent = `✅ "${command}" gesendet.`;
       } catch (err) {
-        document.getElementById("status").textContent = `Fehler: ${err.message}`;
+        document.getElementById("status").textContent = `❌ Fehler: ${err.message}`;
       }
     };
+
+    // ── Web-Push ───────────────────────────────────────────────────────────
+    window.registerWebPush = async function () {
+      try {
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+        await setDoc(doc(db, "owner", "dashboard"), {
+          fcmToken: token,
+          registeredAt: Date.now(),
+          userAgent: navigator.userAgent,
+        });
+        Notification.permission === "granted" &&
+          (document.getElementById("push-banner").style.display = "none");
+        document.getElementById("status").textContent =
+          "✅ Push-Benachrichtigungen aktiviert. Tagesbericht wird täglich um 20:00 Uhr gesendet.";
+      } catch (err) {
+        document.getElementById("status").textContent =
+          `❌ Push-Registrierung fehlgeschlagen: ${err.message}`;
+      }
+    };
+
+    // Push-Nachricht im Vordergrund anzeigen
+    onMessage(messaging, payload => {
+      const { title, body } = payload.notification;
+      document.getElementById("status").textContent = `🔔 ${title}: ${body}`;
+    });
+
+    // ── Tagesberichte ──────────────────────────────────────────────────────
+    const reportsQ = query(
+      collection(db, "reports"),
+      where("deviceId", "==", DEVICE_ID),
+      orderBy("createdAt", "desc"),
+      limit(7)           // letzte 7 Tage
+    );
+    onSnapshot(reportsQ, snap => {
+      const list = document.getElementById("reports-list");
+      if (snap.empty) {
+        list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Berichte vorhanden.</em>';
+        return;
+      }
+      list.innerHTML = snap.docs.map(d => {
+        const r = d.data();
+        const date = r.date || "–";
+        const count = r.locationCount ?? 0;
+        const from  = r.firstTimestamp
+          ? new Date(r.firstTimestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+          : "–";
+        const to    = r.lastTimestamp
+          ? new Date(r.lastTimestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+          : "–";
+        const link  = r.mapsUrl
+          ? `<a href="${r.mapsUrl}" target="_blank">→ Route in Maps öffnen</a>`
+          : "";
+        return `
+          <div class="report-item">
+            <strong>${date}</strong> – ${count} Standorte ${link}
+            <div class="report-meta">${from} – ${to} Uhr</div>
+          </div>`;
+      }).join("");
+    });
   </script>
 
-  <!-- TODO: eigenen Google Maps API-Key einfügen -->
+  <!-- TODO: eigenen Google Maps API-Key eintragen -->
   <script src="https://maps.googleapis.com/maps/api/js?key=TODO&callback=initMap" async defer></script>
 </body>
 </html>
