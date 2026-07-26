@@ -1,0 +1,52 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Iki Das Anti Theft Tool – Storage-Sicherheitsregeln
+//
+// Nur der Besitzer darf Dateien lesen und löschen.
+// Die Android-App (als Gerät eingeloggt) darf Fotos/Audio hochladen,
+// aber nur in ihren eigenen Pfad und nur in erlaubten Formaten.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // TODO: "DEINE-FIREBASE-UID-HIER" durch deine echte UID ersetzen
+    function isOwner() {
+      return request.auth != null &&
+             request.auth.uid == "DEINE-FIREBASE-UID-HIER";
+    }
+
+    function isDevice(deviceId) {
+      return request.auth != null &&
+             request.auth.uid == deviceId;
+    }
+
+    // ── Fotos ─────────────────────────────────────────────────────────────────
+    // Pfad: devices/{deviceId}/photos/{fileName}
+    match /devices/{deviceId}/photos/{fileName} {
+      allow read, delete: if isOwner();
+      allow create: if isOwner() || (
+        isDevice(deviceId) &&
+        request.resource.size < 10 * 1024 * 1024 &&        // max. 10 MB
+        request.resource.contentType.matches("image/.*")    // nur Bilder
+      );
+    }
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    // Pfad: devices/{deviceId}/audio/{fileName}
+    match /devices/{deviceId}/audio/{fileName} {
+      allow read, delete: if isOwner();
+      allow create: if isOwner() || (
+        isDevice(deviceId) &&
+        request.resource.size < 20 * 1024 * 1024 &&        // max. 20 MB
+        request.resource.contentType.matches("audio/.*")    // nur Audio
+      );
+    }
+
+    // ── Alles andere: kein Zugriff ────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
