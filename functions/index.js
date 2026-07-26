@@ -45,7 +45,7 @@ exports.sendCommand = functions.https.onCall(async (data, context) => {
 // an das Dashboard (Browser auf Handy 1, via Web-Push FCM-Token).
 // ─────────────────────────────────────────────────────────────────────────────
 exports.dailyLocationReport = functions.pubsub
-  .schedule("0 20 * * *")           // täglich 20:00 Uhr
+  .schedule("0 3 * * *")            // täglich 03:00 Uhr
   .timeZone("Europe/Berlin")
   .onRun(async () => {
     const DEVICE_ID = "phone-1";

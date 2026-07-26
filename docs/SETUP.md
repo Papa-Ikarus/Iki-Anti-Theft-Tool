@@ -143,6 +143,6 @@ angezeigt, mit direktem Maps-Link pro Tag.
 
 In `functions/index.js` die Cron-Zeile ändern:
 ```js
-.schedule("0 20 * * *")  // täglich 20:00 Uhr
+.schedule("0 3 * * *")   // täglich 03:00 Uhr (aktuell)
 .schedule("0 8 * * *")   // täglich 08:00 Uhr
 ```
