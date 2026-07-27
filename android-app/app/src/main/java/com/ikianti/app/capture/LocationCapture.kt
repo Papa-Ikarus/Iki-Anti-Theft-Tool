@@ -2,30 +2,33 @@ package com.ikianti.app.capture
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import com.google.android.gms.location.LocationServices
-import com.google.firebase.firestore.ktx.firestore
-import com.google.firebase.ktx.Firebase
+import com.ikianti.app.SupabaseApi
 
 class LocationCapture(private val context: Context) {
 
-    @SuppressLint("MissingPermission") // Permission wird in MainActivity abgefragt
+    @SuppressLint("MissingPermission")
     fun fetchAndUpload(onDone: () -> Unit) {
         LocationServices.getFusedLocationProviderClient(context)
             .lastLocation
             .addOnSuccessListener { location ->
                 if (location != null) {
-                    Firebase.firestore.collection("devices").document("phone-1")
-                        .collection("locations")
-                        .add(
-                            mapOf(
-                                "lat" to location.latitude,
-                                "lng" to location.longitude,
-                                "timestamp" to System.currentTimeMillis()
-                            )
-                        )
+                    SupabaseApi.insertLocation(
+                        deviceId  = "phone-1",
+                        lat       = location.latitude,
+                        lng       = location.longitude,
+                        timestamp = System.currentTimeMillis(),
+                        onDone    = onDone
+                    )
+                } else {
+                    Log.w("LocationCapture", "Kein Standort verfügbar")
+                    onDone()
                 }
+            }
+            .addOnFailureListener { e ->
+                Log.e("LocationCapture", "Standort-Fehler", e)
                 onDone()
             }
-            .addOnFailureListener { onDone() }
     }
 }

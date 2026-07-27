@@ -2,17 +2,16 @@ package com.ikianti.app.capture
 
 import android.content.Context
 import android.media.MediaRecorder
-import android.net.Uri
 import android.os.Handler
 import android.os.Looper
-import com.google.firebase.storage.ktx.storage
-import com.google.firebase.ktx.Firebase
+import android.util.Log
+import com.ikianti.app.SupabaseApi
 import java.io.File
 
 class AudioCapture(private val context: Context) {
 
     fun recordAndUpload(seconds: Int, onDone: () -> Unit) {
-        val outputFile = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
+        val file = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
 
         @Suppress("DEPRECATION")
         val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
@@ -25,27 +24,29 @@ class AudioCapture(private val context: Context) {
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOutputFile(outputFile.absolutePath)
+            setOutputFile(file.absolutePath)
             prepare()
             start()
         }
 
         Handler(Looper.getMainLooper()).postDelayed({
-            try {
-                recorder.stop()
-            } catch (_: Exception) {
-                // Aufnahme evtl. zu kurz - Datei trotzdem hochladen falls vorhanden
-            }
+            try { recorder.stop() } catch (_: Exception) {}
             recorder.release()
-            uploadFile(outputFile, onDone)
+
+            if (file.exists() && file.length() > 0) {
+                SupabaseApi.uploadFile(
+                    bucket   = "audio",
+                    path     = "phone-1/${file.name}",
+                    bytes    = file.readBytes(),
+                    mimeType = "audio/mp4"
+                ) {
+                    file.delete()
+                    onDone()
+                }
+            } else {
+                Log.w("AudioCapture", "Audiodatei leer oder nicht vorhanden")
+                onDone()
+            }
         }, seconds * 1000L)
-    }
-
-    private fun uploadFile(file: File, onDone: () -> Unit) {
-        val ref = Firebase.storage.reference
-            .child("devices/phone-1/audio/${file.name}")
-
-        ref.putFile(Uri.fromFile(file))
-            .addOnCompleteListener { onDone() }
     }
 }
