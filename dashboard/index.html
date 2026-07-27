@@ -8,50 +8,45 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f1f5f9; }
-    header {
-      background: #1e293b; color: white;
-      padding: 14px 16px; font-size: 18px; font-weight: 600;
-    }
+    header { background: #1e293b; color: white; padding: 14px 16px; font-size: 18px; font-weight: 600; }
     #map { height: 55vh; width: 100%; }
-    .card {
-      background: white; margin: 12px; border-radius: 10px;
-      padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
-    }
+    .card { background: white; margin: 12px; border-radius: 10px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     .card h3 { font-size: 13px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
     .controls { display: flex; gap: 10px; flex-wrap: wrap; }
-    button {
-      flex: 1; min-width: 120px; padding: 10px 8px;
-      font-size: 14px; border: none; border-radius: 8px;
-      background: #2563eb; color: white; cursor: pointer;
-    }
+    button { flex: 1; min-width: 120px; padding: 10px 8px; font-size: 14px; border: none; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
     button:hover { background: #1d4ed8; }
     button.secondary { background: #475569; }
-    button.secondary:hover { background: #334155; }
     #status { font-size: 13px; color: #475569; margin-top: 10px; }
-    .report-item {
-      padding: 10px 0; border-bottom: 1px solid #f1f5f9;
-      font-size: 14px;
-    }
+    .report-item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
     .report-item:last-child { border-bottom: none; }
     .report-item a { color: #2563eb; text-decoration: none; font-weight: 500; }
     .report-meta { font-size: 12px; color: #94a3b8; margin-top: 2px; }
-    #push-banner {
-      background: #fef3c7; border: 1px solid #fcd34d;
-      border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-      font-size: 13px; display: none;
-    }
+    #login-screen { position: fixed; inset: 0; background: #1e293b; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; z-index: 999; }
+    #login-screen input { padding: 10px 14px; border-radius: 8px; border: none; width: 260px; font-size: 15px; }
+    #login-screen button { flex: none; width: 260px; padding: 12px; font-size: 15px; }
+    #login-error { color: #fca5a5; font-size: 13px; }
+    #push-banner { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; display: none; }
   </style>
 </head>
 <body>
-  <header>📍 Iki Das Anti Theft Tool</header>
 
+  <!-- Login (Besitzer-Auth via Supabase) -->
+  <div id="login-screen">
+    <div style="color:white;font-size:20px;font-weight:600">📍 Iki Anti Theft</div>
+    <input id="email"    type="email"    placeholder="E-Mail" />
+    <input id="password" type="password" placeholder="Passwort" />
+    <button onclick="login()">Einloggen</button>
+    <div id="login-error"></div>
+  </div>
+
+  <header>📍 Iki Das Anti Theft Tool</header>
   <div id="map"></div>
 
   <div class="card">
     <h3>Steuerung</h3>
     <div id="push-banner">
-      🔔 Push-Benachrichtigungen aktivieren, um den täglichen Bericht zu empfangen.
-      <button onclick="registerWebPush()" style="margin-top:8px;flex:none;min-width:auto;padding:6px 12px;font-size:13px;">Jetzt aktivieren</button>
+      🔔 Push-Benachrichtigungen für Tagesberichte aktivieren.
+      <button onclick="registerWebPush()" style="margin-top:8px;flex:none;min-width:auto;padding:6px 12px;font-size:13px;">Aktivieren</button>
     </div>
     <div class="controls">
       <button onclick="trigger('photo')">📷 Foto</button>
@@ -66,144 +61,159 @@
     <div id="reports-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
   </div>
 
-  <!-- TODO: eigene Firebase-Config eintragen, siehe docs/SETUP.md -->
   <script type="module">
-    import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, doc, collection, onSnapshot, query, orderBy, limit, where }
-                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import { getMessaging, getToken, onMessage }
-                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
-    import { getFunctions, httpsCallable }
-                                       from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-    import { setDoc }                  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    // TODO: Supabase-Werte eintragen (Project Settings → API)
+    const SUPABASE_URL      = "TODO_SUPABASE_URL";
+    const SUPABASE_ANON_KEY = "TODO_SUPABASE_ANON_KEY";
 
-    // TODO: durch eigene Firebase-Projektkonfiguration ersetzen
-    const firebaseConfig = {
-      apiKey: "TODO",
-      authDomain: "TODO.firebaseapp.com",
-      projectId: "TODO",
-      storageBucket: "TODO.appspot.com",
-      messagingSenderId: "TODO",
-      appId: "TODO",
-      // TODO: VAPID-Key aus Firebase Console → Projekteinstellungen →
-      //       Cloud Messaging → Web-Push-Zertifikate
+    // TODO: Firebase-Config für Web-Push eintragen
+    const FIREBASE_CONFIG = {
+      apiKey: "TODO", authDomain: "TODO.firebaseapp.com",
+      projectId: "TODO", storageBucket: "TODO.appspot.com",
+      messagingSenderId: "TODO", appId: "TODO",
+    };
+    const VAPID_KEY   = "TODO_VAPID_KEY";
+    const DEVICE_ID   = "phone-1";
+    // TODO: Edge Function URL (Supabase Dashboard → Edge Functions)
+    const EDGE_URL    = "TODO_SUPABASE_URL/functions/v1/send-command";
+
+    // ── Supabase Client ─────────────────────────────────────────────────────
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+    import { initializeApp }     from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const fbApp    = initializeApp(FIREBASE_CONFIG);
+    const messaging = getMessaging(fbApp);
+
+    let authToken = null;
+
+    // ── Login ───────────────────────────────────────────────────────────────
+    window.login = async function () {
+      const email    = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        document.getElementById("login-error").textContent = "Fehler: " + error.message;
+        return;
+      }
+      authToken = data.session.access_token;
+      document.getElementById("login-screen").style.display = "none";
+      init();
     };
 
-    const VAPID_KEY = "TODO_VAPID_KEY";
-    const DEVICE_ID = "phone-1";
+    async function init() {
+      if (Notification.permission !== "granted") {
+        document.getElementById("push-banner").style.display = "block";
+      }
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/firebase-messaging-sw.js");
+      }
+      loadMap();
+      loadReports();
+      subscribeLocationUpdates();
 
-    const app       = initializeApp(firebaseConfig);
-    const db        = getFirestore(app);
-    const messaging = getMessaging(app);
-    const functions = getFunctions(app);
-
-    // Service Worker registrieren (nötig für Web-Push im Hintergrund)
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/firebase-messaging-sw.js")
-        .then(reg => console.log("SW registriert:", reg.scope))
-        .catch(err => console.error("SW-Fehler:", err));
+      onMessage(messaging, payload => {
+        const { title, body } = payload.notification;
+        document.getElementById("status").textContent = `🔔 ${title}: ${body}`;
+      });
     }
 
-    // Push-Banner zeigen wenn noch keine Permission
-    if (Notification.permission !== "granted") {
-      document.getElementById("push-banner").style.display = "block";
-    }
-
-    // ── Karte ──────────────────────────────────────────────────────────────
+    // ── Karte ───────────────────────────────────────────────────────────────
     let map, marker;
     window.initMap = function () {
       map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 51.5, lng: 7.0 },
-        zoom: 12,
-        mapTypeControl: false,
-        streetViewControl: false,
+        center: { lat: 51.5, lng: 7.0 }, zoom: 12,
+        mapTypeControl: false, streetViewControl: false,
       });
     };
 
-    // Live-Standort-Update
-    const locQ = query(
-      collection(db, "devices", DEVICE_ID, "locations"),
-      orderBy("timestamp", "desc"), limit(1)
-    );
-    onSnapshot(locQ, snap => {
-      snap.forEach(d => {
-        const { lat, lng } = d.data();
-        const pos = { lat, lng };
-        if (!marker) marker = new google.maps.Marker({ position: pos, map });
-        else marker.setPosition(pos);
-        map.panTo(pos);
-      });
-    });
+    function loadMap() {
+      // Letzten Standort laden
+      supabase.from("locations")
+        .select("lat, lng, timestamp")
+        .eq("device_id", DEVICE_ID)
+        .order("timestamp", { ascending: false })
+        .limit(1)
+        .then(({ data }) => {
+          if (data?.length) updateMarker(data[0]);
+        });
+    }
 
-    // ── Steuerung ──────────────────────────────────────────────────────────
+    function subscribeLocationUpdates() {
+      supabase.channel("locations")
+        .on("postgres_changes", {
+          event: "INSERT", schema: "public", table: "locations",
+          filter: `device_id=eq.${DEVICE_ID}`
+        }, payload => updateMarker(payload.new))
+        .subscribe();
+    }
+
+    function updateMarker({ lat, lng }) {
+      const pos = { lat, lng };
+      if (!marker) marker = new google.maps.Marker({ position: pos, map });
+      else marker.setPosition(pos);
+      map.panTo(pos);
+    }
+
+    // ── Steuerung ───────────────────────────────────────────────────────────
     window.trigger = async function (command) {
       document.getElementById("status").textContent = `⏳ Sende ${command}…`;
       try {
-        await httpsCallable(functions, "sendCommand")({ deviceId: DEVICE_ID, command });
-        document.getElementById("status").textContent = `✅ "${command}" gesendet.`;
+        const res = await fetch(EDGE_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`,
+          },
+          body: JSON.stringify({ deviceId: DEVICE_ID, command }),
+        });
+        const json = await res.json();
+        document.getElementById("status").textContent =
+          json.success ? `✅ "${command}" gesendet.` : `❌ ${json.error}`;
       } catch (err) {
         document.getElementById("status").textContent = `❌ Fehler: ${err.message}`;
       }
     };
 
-    // ── Web-Push ───────────────────────────────────────────────────────────
+    // ── Web-Push registrieren ───────────────────────────────────────────────
     window.registerWebPush = async function () {
       try {
         const token = await getToken(messaging, { vapidKey: VAPID_KEY });
-        await setDoc(doc(db, "owner", "dashboard"), {
-          fcmToken: token,
-          registeredAt: Date.now(),
-          userAgent: navigator.userAgent,
+        await supabase.from("owner").upsert({
+          id: "dashboard", fcm_token: token, registered_at: Date.now()
         });
-        Notification.permission === "granted" &&
-          (document.getElementById("push-banner").style.display = "none");
-        document.getElementById("status").textContent =
-          "✅ Push-Benachrichtigungen aktiviert. Tagesbericht wird täglich um 20:00 Uhr gesendet.";
+        document.getElementById("push-banner").style.display = "none";
+        document.getElementById("status").textContent = "✅ Push aktiviert – Bericht täglich um 03:00 Uhr.";
       } catch (err) {
-        document.getElementById("status").textContent =
-          `❌ Push-Registrierung fehlgeschlagen: ${err.message}`;
+        document.getElementById("status").textContent = `❌ Push-Fehler: ${err.message}`;
       }
     };
 
-    // Push-Nachricht im Vordergrund anzeigen
-    onMessage(messaging, payload => {
-      const { title, body } = payload.notification;
-      document.getElementById("status").textContent = `🔔 ${title}: ${body}`;
-    });
+    // ── Tagesberichte ───────────────────────────────────────────────────────
+    async function loadReports() {
+      const { data } = await supabase
+        .from("reports")
+        .select("*")
+        .eq("device_id", DEVICE_ID)
+        .order("date", { ascending: false })
+        .limit(7);
 
-    // ── Tagesberichte ──────────────────────────────────────────────────────
-    const reportsQ = query(
-      collection(db, "reports"),
-      where("deviceId", "==", DEVICE_ID),
-      orderBy("createdAt", "desc"),
-      limit(7)           // letzte 7 Tage
-    );
-    onSnapshot(reportsQ, snap => {
       const list = document.getElementById("reports-list");
-      if (snap.empty) {
+      if (!data?.length) {
         list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Berichte vorhanden.</em>';
         return;
       }
-      list.innerHTML = snap.docs.map(d => {
-        const r = d.data();
-        const date = r.date || "–";
-        const count = r.locationCount ?? 0;
-        const from  = r.firstTimestamp
-          ? new Date(r.firstTimestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
-          : "–";
-        const to    = r.lastTimestamp
-          ? new Date(r.lastTimestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
-          : "–";
-        const link  = r.mapsUrl
-          ? `<a href="${r.mapsUrl}" target="_blank">→ Route in Maps öffnen</a>`
-          : "";
-        return `
-          <div class="report-item">
-            <strong>${date}</strong> – ${count} Standorte ${link}
-            <div class="report-meta">${from} – ${to} Uhr</div>
-          </div>`;
+      list.innerHTML = data.map(r => {
+        const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
+        const link = r.maps_url ? `<a href="${r.maps_url}" target="_blank">→ Route öffnen</a>` : "";
+        return `<div class="report-item">
+          <strong>${r.date}</strong> – ${r.location_count} Standorte ${link}
+          <div class="report-meta">${fmt(r.first_timestamp)} – ${fmt(r.last_timestamp)} Uhr</div>
+        </div>`;
       }).join("");
-    });
+    }
   </script>
 
   <!-- TODO: eigenen Google Maps API-Key eintragen -->

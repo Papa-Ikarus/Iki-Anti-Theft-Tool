@@ -1,17 +1,6 @@
 {
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  },
-  "storage": {
-    "rules": "storage.rules"
-  },
   "hosting": {
     "public": "dashboard",
-    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
-  },
-  "functions": {
-    "source": "functions",
-    "runtime": "nodejs20"
+    "ignore": ["firebase.json", "**/.*"]
   }
 }
