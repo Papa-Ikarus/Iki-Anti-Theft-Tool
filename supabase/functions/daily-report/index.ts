@@ -51,6 +51,23 @@ Deno.serve(async (req) => {
     title   = `📍 Tagesbericht – ${count} Standorte`;
     body    = `Erster: ${fmt(first.timestamp)} · Letzter: ${fmt(last.timestamp)} Uhr`;
 
+    // Top-App-Nutzung laden
+    const yesterday = new Date(first.timestamp).toISOString().split("T")[0];
+    const { data: usageData } = await supabase
+      .from("usage_logs")
+      .select("app_name, app_package, total_time_ms")
+      .eq("device_id", DEVICE_ID)
+      .eq("date", yesterday)
+      .order("total_time_ms", { ascending: false })
+      .limit(5);
+
+    const topApps = usageData?.map(u => {
+      const mins = Math.round(u.total_time_ms / 60000);
+      return `${u.app_name || u.app_package} ${mins}Min`;
+    }).join(" · ") ?? "";
+
+    if (topApps) body += `\n📱 ${topApps}`;
+
     // Bericht in DB speichern
     await supabase.from("reports").insert({
       date: new Date().toISOString().split("T")[0],
