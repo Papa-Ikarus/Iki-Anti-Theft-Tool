@@ -19,8 +19,8 @@ import java.io.IOException
 object SupabaseApi {
 
     // TODO: eigene Werte eintragen
-    private const val SUPABASE_URL     = "TODO_SUPABASE_URL"       // z.B. https://xyz.supabase.co
-    private const val SUPABASE_ANON_KEY = "TODO_SUPABASE_ANON_KEY" // langer eyJ... Token
+    private const val SUPABASE_URL      = "https://ywrhhuhadgtmdzldbawa.supabase.co"
+    private const val SUPABASE_ANON_KEY = "sb_publishable_XewJO51CVSpz2fVlHPLrbQ_Yj6OWixg"
 
     private const val TAG = "SupabaseApi"
 
