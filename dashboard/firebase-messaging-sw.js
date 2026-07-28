@@ -6,12 +6,12 @@ importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-com
 
 // TODO: gleiche Firebase-Config wie in index.html eintragen
 firebase.initializeApp({
-  apiKey: "TODO",
-  authDomain: "TODO.firebaseapp.com",
-  projectId: "TODO",
-  storageBucket: "TODO.appspot.com",
-  messagingSenderId: "TODO",
-  appId: "TODO",
+  apiKey: "AIzaSyAT_Ggfx13HUyiFlRSIMqcPFHnkSI6z9h0",
+  authDomain: "iki-anti-theft.firebaseapp.com",
+  projectId: "iki-anti-theft",
+  storageBucket: "iki-anti-theft.firebasestorage.app",
+  messagingSenderId: "472144471117",
+  appId: "1:472144471117:web:47e2f30ed040b58b55a804",
 });
 
 const messaging = firebase.messaging();
