@@ -57,7 +57,11 @@
   </div>
 
   <div class="card">
-    <h3>Tagesberichte</h3>
+    <h3>App-Nutzung gestern</h3>
+    <div id="usage-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
+  </div>
+
+  <div class="card">
     <div id="reports-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
   </div>
 
@@ -115,6 +119,7 @@
       }
       loadMap();
       loadReports();
+      loadUsageStats();
       subscribeLocationUpdates();
 
       onMessage(messaging, payload => {
@@ -193,6 +198,40 @@
         document.getElementById("status").textContent = `❌ Push-Fehler: ${err.message}`;
       }
     };
+
+    // ── App-Nutzungsstatistiken ─────────────────────────────────────────────
+    async function loadUsageStats() {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
+      const { data } = await supabase
+        .from("usage_logs")
+        .select("app_name, app_package, total_time_ms")
+        .eq("device_id", DEVICE_ID)
+        .eq("date", yesterday)
+        .order("total_time_ms", { ascending: false })
+        .limit(15);
+
+      const list = document.getElementById("usage-list");
+      if (!data?.length) {
+        list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten für gestern.</em>';
+        return;
+      }
+
+      const maxTime = data[0].total_time_ms;
+      list.innerHTML = data.map(u => {
+        const mins  = Math.round(u.total_time_ms / 60000);
+        const hours = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
+        const pct   = Math.round((u.total_time_ms / maxTime) * 100);
+        const name  = u.app_name || u.app_package;
+        return `<div class="report-item">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <span>${name}</span><span style="color:#64748b;font-size:13px">${hours}</span>
+          </div>
+          <div style="background:#f1f5f9;border-radius:4px;height:6px">
+            <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
+          </div>
+        </div>`;
+      }).join("");
+    }
 
     // ── Tagesberichte ───────────────────────────────────────────────────────
     async function loadReports() {

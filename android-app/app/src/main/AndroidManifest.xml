@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Netzwerk -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -22,6 +23,10 @@
 
     <!-- Auto-Start nach Neustart -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- App-Nutzungsstatistiken (muss manuell in Einstellungen erlaubt werden) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="false"
@@ -79,6 +84,17 @@
             android:name=".service.CaptureForegroundService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone|location" />
+
+        <!-- WorkManager: täglicher Upload von Standort + App-Nutzung -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup" />
+        </provider>
 
     </application>
 </manifest>

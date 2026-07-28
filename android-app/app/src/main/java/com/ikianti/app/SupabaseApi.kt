@@ -141,6 +141,31 @@ object SupabaseApi {
         })
     }
 
+    // ── App-Nutzungsstatistiken hochladen (Batch) ─────────────────────────────
+
+    fun insertUsageLogs(jsonArray: String, onDone: () -> Unit) {
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/rest/v1/usage_logs")
+            .headers(anonHeaders())
+            .header("Prefer", "resolution=merge-duplicates") // upsert bei Duplikaten
+            .post(jsonArray.toRequestBody(JSON_MEDIA))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "insertUsageLogs fehlgeschlagen", e)
+                onDone()
+            }
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "UsageLogs-Fehler ${response.code}: ${response.body?.string()}")
+                }
+                response.close()
+                onDone()
+            }
+        })
+    }
+
     // ── Header-Helper ─────────────────────────────────────────────────────────
 
     private fun anonHeaders() = Headers.Builder()
