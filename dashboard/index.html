@@ -5,6 +5,8 @@
   <title>Iki Das Anti Theft Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.json" />
+  <!-- Leaflet.js – kostenlose Karte via OpenStreetMap, kein API-Key nötig -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f1f5f9; }
@@ -128,41 +130,34 @@
       });
     }
 
-    // ── Karte ───────────────────────────────────────────────────────────────
+    // ── Karte (Leaflet + OpenStreetMap, kein API-Key nötig) ─────────────────
+    import L from "https://esm.sh/leaflet@1.9.4";
+
     let map, marker;
-    window.initMap = function () {
-      map = new google.maps.Map(document.getElementById("map"), {
-        center: { lat: 51.5, lng: 7.0 }, zoom: 12,
-        mapTypeControl: false, streetViewControl: false,
-      });
-    };
 
     function loadMap() {
+      map = L.map("map").setView([51.5, 7.0], 12);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "© OpenStreetMap-Mitwirkende",
+        maxZoom: 19,
+      }).addTo(map);
+
       // Letzten Standort laden
       supabase.from("locations")
         .select("lat, lng, timestamp")
         .eq("device_id", DEVICE_ID)
         .order("timestamp", { ascending: false })
         .limit(1)
-        .then(({ data }) => {
-          if (data?.length) updateMarker(data[0]);
-        });
-    }
-
-    function subscribeLocationUpdates() {
-      supabase.channel("locations")
-        .on("postgres_changes", {
-          event: "INSERT", schema: "public", table: "locations",
-          filter: `device_id=eq.${DEVICE_ID}`
-        }, payload => updateMarker(payload.new))
-        .subscribe();
+        .then(({ data }) => { if (data?.length) updateMarker(data[0]); });
     }
 
     function updateMarker({ lat, lng }) {
-      const pos = { lat, lng };
-      if (!marker) marker = new google.maps.Marker({ position: pos, map });
-      else marker.setPosition(pos);
-      map.panTo(pos);
+      if (!marker) {
+        marker = L.marker([lat, lng]).addTo(map);
+      } else {
+        marker.setLatLng([lat, lng]);
+      }
+      map.panTo([lat, lng]);
     }
 
     // ── Steuerung ───────────────────────────────────────────────────────────
@@ -258,7 +253,6 @@
     }
   </script>
 
-  <!-- TODO: eigenen Google Maps API-Key eintragen -->
-  <script src="https://maps.googleapis.com/maps/api/js?key=TODO&callback=initMap" async defer></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </body>
 </html>
