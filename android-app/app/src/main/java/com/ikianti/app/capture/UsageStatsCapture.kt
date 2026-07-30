@@ -73,7 +73,7 @@ class UsageStatsCapture(private val context: Context) {
         relevant.forEach { stat ->
             val appName = getAppName(stat.packageName)
             entries.put(JSONObject().apply {
-                put("device_id", "phone-1")
+                put("device_id", DeviceManager.getDeviceId(context))
                 put("date", date)
                 put("app_package", stat.packageName)
                 put("app_name", appName)

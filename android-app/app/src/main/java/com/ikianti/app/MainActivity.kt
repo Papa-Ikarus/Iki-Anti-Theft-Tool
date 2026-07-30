@@ -34,7 +34,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         val missing = requiredPermissions.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -45,31 +44,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
-    ) {
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_PERMISSIONS) checkUsageStatsPermission()
     }
 
     override fun onResume() {
         super.onResume()
-        // Zurück von den Einstellungen → prüfen ob Permission jetzt gesetzt ist
         if (hasUsageStatsPermission()) finishSetup()
     }
 
-    /**
-     * PACKAGE_USAGE_STATS kann nicht per Dialog angefordert werden –
-     * Nutzer muss manuell in die Systemeinstellungen.
-     */
     private fun checkUsageStatsPermission() {
         if (!hasUsageStatsPermission()) {
-            Toast.makeText(
-                this,
-                "Bitte 'Nutzungszugriff' für diese App aktivieren",
-                Toast.LENGTH_LONG
-            ).show()
-            // Direkt zu den Nutzungszugriff-Einstellungen springen
+            Toast.makeText(this, "Bitte 'Nutzungszugriff' für diese App aktivieren", Toast.LENGTH_LONG).show()
             startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
         } else {
             finishSetup()
@@ -80,16 +67,19 @@ class MainActivity : AppCompatActivity() {
         val appOps = getSystemService(APP_OPS_SERVICE) as AppOpsManager
         val mode = appOps.checkOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
-            android.os.Process.myUid(),
-            packageName
+            android.os.Process.myUid(), packageName
         )
         return mode == AppOpsManager.MODE_ALLOWED
     }
 
     private fun finishSetup() {
+        // Eindeutige Geräte-ID holen (wird beim ersten Start generiert)
+        val deviceId = DeviceManager.getDeviceId(this)
+        Log.d(TAG, "Geräte-ID: $deviceId")
+
         Firebase.messaging.token.addOnSuccessListener { token ->
-            SupabaseApi.upsertDevice("phone-1", token) {
-                Log.d(TAG, "Gerät registriert")
+            SupabaseApi.upsertDevice(deviceId, token) {
+                Log.d(TAG, "Gerät registriert: $deviceId")
                 scheduleDailyUpload()
                 hideLauncherIcon()
                 finish()
@@ -103,25 +93,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * WorkManager: täglicher Upload von Standort + App-Nutzung.
-     * Startet erstmals nach 24h, wiederholt sich täglich.
-     */
     private fun scheduleDailyUpload() {
         val request = PeriodicWorkRequestBuilder<DailyUploadWorker>(24, TimeUnit.HOURS)
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build()
-            )
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
             .build()
-
         WorkManager.getInstance(this).enqueueUniquePeriodicWork(
             DailyUploadWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP, // nicht neu starten wenn bereits geplant
+            ExistingPeriodicWorkPolicy.KEEP,
             request
         )
-        Log.d(TAG, "Täglicher Upload-Job geplant")
     }
 
     private fun hideLauncherIcon() {
