@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
 
 class FcmTriggerService : FirebaseMessagingService() {
@@ -25,8 +26,8 @@ class FcmTriggerService : FirebaseMessagingService() {
     }
 
     override fun onNewToken(token: String) {
-        // Token hat sich geändert → in Supabase aktualisieren
-        Log.d("FcmTriggerService", "FCM-Token erneuert")
-        SupabaseApi.updateFcmToken("phone-1", token)
+        val deviceId = DeviceManager.getDeviceId(this)
+        Log.d("FcmTriggerService", "FCM-Token erneuert für $deviceId")
+        SupabaseApi.updateFcmToken(deviceId, token)
     }
 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.util.Log
 import com.google.firebase.messaging.ktx.messaging
 import com.google.firebase.ktx.Firebase
+import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
 
 class BootReceiver : BroadcastReceiver() {
@@ -15,10 +16,11 @@ class BootReceiver : BroadcastReceiver() {
         if (action != Intent.ACTION_BOOT_COMPLETED &&
             action != "android.intent.action.LOCKED_BOOT_COMPLETED") return
 
-        Log.d("BootReceiver", "Neustart erkannt – FCM-Token wird aktualisiert")
+        val deviceId = DeviceManager.getDeviceId(context)
+        Log.d("BootReceiver", "Neustart – Token aktualisieren für $deviceId")
 
         Firebase.messaging.token.addOnSuccessListener { token ->
-            SupabaseApi.updateFcmToken("phone-1", token)
+            SupabaseApi.updateFcmToken(deviceId, token)
         }
     }
 }

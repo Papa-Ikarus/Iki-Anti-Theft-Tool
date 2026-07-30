@@ -15,7 +15,7 @@ class LocationCapture(private val context: Context) {
             .addOnSuccessListener { location ->
                 if (location != null) {
                     SupabaseApi.insertLocation(
-                        deviceId  = "phone-1",
+                        deviceId  = DeviceManager.getDeviceId(context),
                         lat       = location.latitude,
                         lng       = location.longitude,
                         timestamp = System.currentTimeMillis(),

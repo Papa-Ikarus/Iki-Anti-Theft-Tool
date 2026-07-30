@@ -5,19 +5,17 @@
   <title>Iki Das Anti Theft Tool</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="manifest" href="/manifest.json" />
-  <!-- Leaflet.js – kostenlose Karte via OpenStreetMap, kein API-Key nötig -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #f1f5f9; }
     header { background: #1e293b; color: white; padding: 14px 16px; font-size: 18px; font-weight: 600; }
-    #map { height: 55vh; width: 100%; }
+    #map { height: 50vh; width: 100%; }
     .card { background: white; margin: 12px; border-radius: 10px; padding: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
     .card h3 { font-size: 13px; color: #64748b; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .05em; }
     .controls { display: flex; gap: 10px; flex-wrap: wrap; }
-    button { flex: 1; min-width: 120px; padding: 10px 8px; font-size: 14px; border: none; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
+    button { flex: 1; min-width: 100px; padding: 10px 8px; font-size: 14px; border: none; border-radius: 8px; background: #2563eb; color: white; cursor: pointer; }
     button:hover { background: #1d4ed8; }
-    button.secondary { background: #475569; }
     #status { font-size: 13px; color: #475569; margin-top: 10px; }
     .report-item { padding: 10px 0; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
     .report-item:last-child { border-bottom: none; }
@@ -28,11 +26,15 @@
     #login-screen button { flex: none; width: 260px; padding: 12px; font-size: 15px; }
     #login-error { color: #fca5a5; font-size: 13px; }
     #push-banner { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; font-size: 13px; display: none; }
+    /* Geräte-Auswahl */
+    .device-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .device-tab { padding: 6px 12px; border-radius: 20px; font-size: 13px; border: 1px solid #cbd5e1; background: white; cursor: pointer; color: #475569; }
+    .device-tab.active { background: #2563eb; color: white; border-color: #2563eb; }
+    .device-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
   </style>
 </head>
 <body>
 
-  <!-- Login (Besitzer-Auth via Supabase) -->
   <div id="login-screen">
     <div style="color:white;font-size:20px;font-weight:600">📍 Iki Anti Theft</div>
     <input id="email"    type="email"    placeholder="E-Mail" />
@@ -45,17 +47,24 @@
   <div id="map"></div>
 
   <div class="card">
+    <h3>Geräte</h3>
+    <div class="device-tabs" id="device-tabs">
+      <em style="color:#94a3b8;font-size:13px;">Wird geladen…</em>
+    </div>
+  </div>
+
+  <div class="card">
     <h3>Steuerung</h3>
     <div id="push-banner">
-      🔔 Push-Benachrichtigungen für Tagesberichte aktivieren.
+      🔔 Push für Tagesberichte aktivieren.
       <button onclick="registerWebPush()" style="margin-top:8px;flex:none;min-width:auto;padding:6px 12px;font-size:13px;">Aktivieren</button>
     </div>
     <div class="controls">
       <button onclick="trigger('photo')">📷 Foto</button>
-      <button onclick="trigger('audio')">🎙️ Audio (10s)</button>
+      <button onclick="trigger('audio')">🎙️ Audio</button>
       <button onclick="trigger('location')">📍 Standort</button>
     </div>
-    <div id="status">Bereit.</div>
+    <div id="status">Gerät auswählen…</div>
   </div>
 
   <div class="card">
@@ -64,16 +73,14 @@
   </div>
 
   <div class="card">
+    <h3>Tagesberichte</h3>
     <div id="reports-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
   </div>
 
   <script type="module">
-    // TODO: Supabase-Werte eintragen (Project Settings → API)
     const SUPABASE_URL      = "https://ywrhhuhadgtmdzldbawa.supabase.co";
     const SUPABASE_ANON_KEY = "sb_publishable_XewJO51CVSpz2fVlHPLrbQ_Yj6OWixg";
-
-    // TODO: Firebase-Config für Web-Push eintragen
-    const FIREBASE_CONFIG = {
+    const FIREBASE_CONFIG   = {
       apiKey: "AIzaSyAT_Ggfx13HUyiFlRSIMqcPFHnkSI6z9h0",
       authDomain: "iki-anti-theft.firebaseapp.com",
       projectId: "iki-anti-theft",
@@ -81,145 +88,184 @@
       messagingSenderId: "472144471117",
       appId: "1:472144471117:web:47e2f30ed040b58b55a804",
     };
-    const VAPID_KEY = "BJ5hs_0xUx2KiwhM9HdatZMYivxg28ZZdF7j1iRGP9Xx7RR9q8-kDAd_1Hla2aTeua0H8540dgSERV5YroNUen8";
-    const DEVICE_ID   = "phone-1";
-    // TODO: Edge Function URL (Supabase Dashboard → Edge Functions)
-    const EDGE_URL    = "https://ywrhhuhadgtmdzldbawa.supabase.co/functions/v1/send-command";
+    const VAPID_KEY  = "BJ5hs_0xUx2KiwhM9HdatZMYivxg28ZZdF7j1iRGP9Xx7RR9q8-kDAd_1Hla2aTeua0H8540dgSERV5YroNUen8";
+    const EDGE_URL   = "https://ywrhhuhadgtmdzldbawa.supabase.co/functions/v1/send-command";
 
-    // ── Supabase Client ─────────────────────────────────────────────────────
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-    import { initializeApp }     from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    // Farben für Geräte-Marker auf der Karte
+    const DEVICE_COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed"];
+
+    import { createClient }  from "https://esm.sh/@supabase/supabase-js@2";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
     import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+    import { setDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const fbApp    = initializeApp(FIREBASE_CONFIG);
-    const messaging = getMessaging(fbApp);
+    const supabase   = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const fbApp      = initializeApp(FIREBASE_CONFIG);
+    const messaging  = getMessaging(fbApp);
 
-    let authToken = null;
+    let authToken       = null;
+    let selectedDevice  = null;
+    let allDevices      = [];
+    let markers         = {}; // deviceId → Leaflet-Marker
+    let map;
 
     // ── Login ───────────────────────────────────────────────────────────────
     window.login = async function () {
-      const email    = document.getElementById("email").value;
-      const password = document.getElementById("password").value;
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-      if (error) {
-        document.getElementById("login-error").textContent = "Fehler: " + error.message;
-        return;
-      }
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: document.getElementById("email").value,
+        password: document.getElementById("password").value,
+      });
+      if (error) { document.getElementById("login-error").textContent = "Fehler: " + error.message; return; }
       authToken = data.session.access_token;
       document.getElementById("login-screen").style.display = "none";
       init();
     };
 
     async function init() {
-      if (Notification.permission !== "granted") {
-        document.getElementById("push-banner").style.display = "block";
-      }
-      if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/firebase-messaging-sw.js");
-      }
-      loadMap();
-      loadReports();
-      loadUsageStats();
+      if (Notification.permission !== "granted") document.getElementById("push-banner").style.display = "block";
+      if ("serviceWorker" in navigator) navigator.serviceWorker.register("/firebase-messaging-sw.js");
+
+      initMap();
+      await loadDevices();
       subscribeLocationUpdates();
 
       onMessage(messaging, payload => {
-        const { title, body } = payload.notification;
-        document.getElementById("status").textContent = `🔔 ${title}: ${body}`;
+        document.getElementById("status").textContent = `🔔 ${payload.notification.title}: ${payload.notification.body}`;
       });
     }
 
-    // ── Karte (Leaflet + OpenStreetMap, kein API-Key nötig) ─────────────────
-    import L from "https://esm.sh/leaflet@1.9.4";
-
-    let map, marker;
-
-    function loadMap() {
-      map = L.map("map").setView([51.5, 7.0], 12);
+    // ── Karte ───────────────────────────────────────────────────────────────
+    function initMap() {
+      map = L.map("map").setView([51.5, 7.0], 6);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap-Mitwirkende",
-        maxZoom: 19,
+        attribution: "© OpenStreetMap", maxZoom: 19,
       }).addTo(map);
-
-      // Letzten Standort laden
-      supabase.from("locations")
-        .select("lat, lng, timestamp")
-        .eq("device_id", DEVICE_ID)
-        .order("timestamp", { ascending: false })
-        .limit(1)
-        .then(({ data }) => { if (data?.length) updateMarker(data[0]); });
     }
 
-    function updateMarker({ lat, lng }) {
-      if (!marker) {
-        marker = L.marker([lat, lng]).addTo(map);
+    function getMarkerIcon(color) {
+      return L.divIcon({
+        className: "",
+        html: `<div style="background:${color};width:14px;height:14px;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,
+        iconSize: [14, 14], iconAnchor: [7, 7],
+      });
+    }
+
+    function updateMarker(deviceId, lat, lng) {
+      const color = DEVICE_COLORS[allDevices.findIndex(d => d.id === deviceId) % DEVICE_COLORS.length];
+      if (!markers[deviceId]) {
+        markers[deviceId] = L.marker([lat, lng], { icon: getMarkerIcon(color) })
+          .addTo(map)
+          .bindPopup(deviceId);
       } else {
-        marker.setLatLng([lat, lng]);
+        markers[deviceId].setLatLng([lat, lng]);
       }
-      map.panTo([lat, lng]);
+      if (selectedDevice === deviceId) map.panTo([lat, lng]);
+    }
+
+    // ── Geräte laden ────────────────────────────────────────────────────────
+    async function loadDevices() {
+      const { data } = await supabase.from("devices").select("id, last_seen");
+      allDevices = data ?? [];
+
+      const tabs = document.getElementById("device-tabs");
+      if (!allDevices.length) {
+        tabs.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Geräte registriert.</em>';
+        return;
+      }
+
+      tabs.innerHTML = allDevices.map((d, i) => {
+        const color = DEVICE_COLORS[i % DEVICE_COLORS.length];
+        const ago   = d.last_seen ? Math.round((Date.now() - d.last_seen) / 60000) : null;
+        const time  = ago !== null ? (ago < 60 ? `${ago} Min.` : `${Math.round(ago/60)} Std.`) : "–";
+        return `<button class="device-tab" onclick="selectDevice('${d.id}')" id="tab-${d.id}">
+          <span class="device-dot" style="background:${color}"></span>${d.id}<br>
+          <span style="font-size:11px;opacity:.7">zuletzt: ${time}</span>
+        </button>`;
+      }).join("");
+
+      // Erstes Gerät automatisch auswählen
+      selectDevice(allDevices[0].id);
+
+      // Letzte Standorte aller Geräte auf Karte zeigen
+      for (const d of allDevices) {
+        const { data: locs } = await supabase.from("locations")
+          .select("lat, lng").eq("device_id", d.id)
+          .order("timestamp", { ascending: false }).limit(1);
+        if (locs?.length) updateMarker(d.id, locs[0].lat, locs[0].lng);
+      }
+    }
+
+    window.selectDevice = function (deviceId) {
+      selectedDevice = deviceId;
+      document.querySelectorAll(".device-tab").forEach(t => t.classList.remove("active"));
+      document.getElementById(`tab-${deviceId}`)?.classList.add("active");
+      document.getElementById("status").textContent = `Gerät: ${deviceId}`;
+      loadReports();
+      loadUsageStats();
+      // Karte auf ausgewähltes Gerät zentrieren
+      if (markers[deviceId]) map.panTo(markers[deviceId].getLatLng());
+    };
+
+    // ── Echtzeit-Updates ────────────────────────────────────────────────────
+    function subscribeLocationUpdates() {
+      supabase.channel("locations-all")
+        .on("postgres_changes", { event: "INSERT", schema: "public", table: "locations" },
+          payload => {
+            const { device_id, lat, lng } = payload.new;
+            updateMarker(device_id, lat, lng);
+          })
+        .subscribe();
     }
 
     // ── Steuerung ───────────────────────────────────────────────────────────
     window.trigger = async function (command) {
-      document.getElementById("status").textContent = `⏳ Sende ${command}…`;
+      if (!selectedDevice) { document.getElementById("status").textContent = "⚠️ Erst ein Gerät auswählen"; return; }
+      document.getElementById("status").textContent = `⏳ Sende ${command} an ${selectedDevice}…`;
       try {
         const res = await fetch(EDGE_URL, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${authToken}`,
-          },
-          body: JSON.stringify({ deviceId: DEVICE_ID, command }),
+          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
+          body: JSON.stringify({ deviceId: selectedDevice, command }),
         });
         const json = await res.json();
         document.getElementById("status").textContent =
-          json.success ? `✅ "${command}" gesendet.` : `❌ ${json.error}`;
+          json.success ? `✅ "${command}" → ${selectedDevice}` : `❌ ${json.error}`;
       } catch (err) {
-        document.getElementById("status").textContent = `❌ Fehler: ${err.message}`;
+        document.getElementById("status").textContent = `❌ ${err.message}`;
       }
     };
 
-    // ── Web-Push registrieren ───────────────────────────────────────────────
+    // ── Web-Push ────────────────────────────────────────────────────────────
     window.registerWebPush = async function () {
       try {
         const token = await getToken(messaging, { vapidKey: VAPID_KEY });
-        await supabase.from("owner").upsert({
-          id: "dashboard", fcm_token: token, registered_at: Date.now()
-        });
+        await supabase.from("owner").upsert({ id: "dashboard", fcm_token: token, registered_at: Date.now() });
         document.getElementById("push-banner").style.display = "none";
-        document.getElementById("status").textContent = "✅ Push aktiviert – Bericht täglich um 03:00 Uhr.";
+        document.getElementById("status").textContent = "✅ Push aktiviert.";
       } catch (err) {
-        document.getElementById("status").textContent = `❌ Push-Fehler: ${err.message}`;
+        document.getElementById("status").textContent = `❌ ${err.message}`;
       }
     };
 
-    // ── App-Nutzungsstatistiken ─────────────────────────────────────────────
+    // ── App-Nutzung ─────────────────────────────────────────────────────────
     async function loadUsageStats() {
+      if (!selectedDevice) return;
       const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-      const { data } = await supabase
-        .from("usage_logs")
+      const { data } = await supabase.from("usage_logs")
         .select("app_name, app_package, total_time_ms")
-        .eq("device_id", DEVICE_ID)
-        .eq("date", yesterday)
-        .order("total_time_ms", { ascending: false })
-        .limit(15);
+        .eq("device_id", selectedDevice).eq("date", yesterday)
+        .order("total_time_ms", { ascending: false }).limit(15);
 
       const list = document.getElementById("usage-list");
-      if (!data?.length) {
-        list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten für gestern.</em>';
-        return;
-      }
-
-      const maxTime = data[0].total_time_ms;
+      if (!data?.length) { list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten.</em>'; return; }
+      const max = data[0].total_time_ms;
       list.innerHTML = data.map(u => {
-        const mins  = Math.round(u.total_time_ms / 60000);
-        const hours = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
-        const pct   = Math.round((u.total_time_ms / maxTime) * 100);
-        const name  = u.app_name || u.app_package;
+        const mins = Math.round(u.total_time_ms / 60000);
+        const time = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
+        const pct  = Math.round((u.total_time_ms / max) * 100);
         return `<div class="report-item">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span>${name}</span><span style="color:#64748b;font-size:13px">${hours}</span>
+            <span>${u.app_name || u.app_package}</span><span style="color:#64748b;font-size:13px">${time}</span>
           </div>
           <div style="background:#f1f5f9;border-radius:4px;height:6px">
             <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
@@ -228,28 +274,22 @@
       }).join("");
     }
 
-    // ── Tagesberichte ───────────────────────────────────────────────────────
+    // ── Tagesberichte ────────────────────────────────────────────────────────
     async function loadReports() {
-      const { data } = await supabase
-        .from("reports")
-        .select("*")
-        .eq("device_id", DEVICE_ID)
-        .order("date", { ascending: false })
-        .limit(7);
+      if (!selectedDevice) return;
+      const { data } = await supabase.from("reports")
+        .select("*").eq("device_id", selectedDevice)
+        .order("date", { ascending: false }).limit(7);
 
       const list = document.getElementById("reports-list");
-      if (!data?.length) {
-        list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Berichte vorhanden.</em>';
-        return;
-      }
-      list.innerHTML = data.map(r => {
-        const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
-        const link = r.maps_url ? `<a href="${r.maps_url}" target="_blank">→ Route öffnen</a>` : "";
-        return `<div class="report-item">
-          <strong>${r.date}</strong> – ${r.location_count} Standorte ${link}
+      if (!data?.length) { list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Berichte.</em>'; return; }
+      const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
+      list.innerHTML = data.map(r => `
+        <div class="report-item">
+          <strong>${r.date}</strong> – ${r.location_count} Standorte
+          ${r.maps_url ? `<a href="${r.maps_url}" target="_blank"> → Route</a>` : ""}
           <div class="report-meta">${fmt(r.first_timestamp)} – ${fmt(r.last_timestamp)} Uhr</div>
-        </div>`;
-      }).join("");
+        </div>`).join("");
     }
   </script>
 
