@@ -73,23 +73,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun finishSetup() {
-        // Eindeutige Geräte-ID holen (wird beim ersten Start generiert)
         val deviceId = DeviceManager.getDeviceId(this)
         Log.d(TAG, "Geräte-ID: $deviceId")
 
         Firebase.messaging.token.addOnSuccessListener { token ->
             SupabaseApi.upsertDevice(deviceId, token) {
                 Log.d(TAG, "Gerät registriert: $deviceId")
-                scheduleDailyUpload()
-                hideLauncherIcon()
-                finish()
+                // Auf Main-Thread wechseln für UI-Operationen
+                runOnUiThread {
+                    scheduleDailyUpload()
+                    hideLauncherIcon()
+                    finish()
+                }
             }
         }.addOnFailureListener { e ->
             Log.e(TAG, "FCM-Token Fehler", e)
             Toast.makeText(this, "Firebase-Verbindung prüfen!", Toast.LENGTH_LONG).show()
-            scheduleDailyUpload()
-            hideLauncherIcon()
-            finish()
+            runOnUiThread {
+                scheduleDailyUpload()
+                hideLauncherIcon()
+                finish()
+            }
         }
     }
 
