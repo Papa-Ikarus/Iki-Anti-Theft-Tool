@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.location.LocationServices
+import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
 
 class LocationCapture(private val context: Context) {
