@@ -4,6 +4,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
+import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
 import org.json.JSONArray
 import org.json.JSONObject
