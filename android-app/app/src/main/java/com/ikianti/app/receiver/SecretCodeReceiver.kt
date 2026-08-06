@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.ikianti.app.MainActivity
+import com.ikianti.app.UnlockActivity
 
 /**
  * Lauscht auf den geheimen Wählcode *#*#4545#*#*
@@ -42,7 +42,7 @@ class SecretCodeReceiver : BroadcastReceiver() {
         nm.createNotificationChannel(channel)
 
         // PendingIntent → öffnet MainActivity
-        val openIntent = Intent(context, MainActivity::class.java).apply {
+        val openIntent = Intent(context, UnlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         val pending = PendingIntent.getActivity(
