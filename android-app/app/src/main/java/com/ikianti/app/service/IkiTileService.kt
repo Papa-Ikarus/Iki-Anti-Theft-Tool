@@ -7,7 +7,7 @@ import android.graphics.drawable.Icon
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.util.Log
-import com.ikianti.app.MainActivity
+import com.ikianti.app.UnlockActivity
 
 /**
  * Quick Settings Tile – erscheint in der Schnelleinstellungs-Leiste.
@@ -43,7 +43,7 @@ class IkiTileService : TileService() {
             PackageManager.DONT_KILL_APP
         )
 
-        val intent = Intent(this, MainActivity::class.java).apply {
+        val intent = Intent(this, UnlockActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         startActivityAndCollapse(intent)
