@@ -20,7 +20,7 @@ object SupabaseApi {
 
     // TODO: eigene Werte eintragen
     private const val SUPABASE_URL      = "https://ywrhhuhadgtmdzldbawa.supabase.co"
-    private const val SUPABASE_ANON_KEY = "sb_publishable_XewJO51CVSpz2fVlHPLrbQ_Yj6OWixg"
+    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmhodWhhZGd0bWR6bGRiYXdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTc4NzQsImV4cCI6MjEwMDc3Mzg3NH0.0NjDWhRSbnUjWbH7NJ7mn9EoG8CPf9-8Ot79SguDyoU"
 
     private const val TAG = "SupabaseApi"
 
