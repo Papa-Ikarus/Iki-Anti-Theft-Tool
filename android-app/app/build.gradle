@@ -1,13 +1,11 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
     id("com.google.gms.google-services")
 }
 
 android {
     namespace = "com.ikianti.app"
     compileSdk = 36
-    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.ikianti.app"
