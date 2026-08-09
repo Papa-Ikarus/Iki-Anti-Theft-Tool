@@ -45,10 +45,16 @@ object SupabaseApi {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "upsertDevice fehlgeschlagen", e)
+                Log.e(TAG, "upsertDevice Netzwerk-Fehler", e)
                 onDone()
             }
             override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+                if (!response.isSuccessful) {
+                    Log.e(TAG, "upsertDevice HTTP-Fehler ${response.code}: $body")
+                } else {
+                    Log.d(TAG, "upsertDevice OK ${response.code}")
+                }
                 response.close()
                 onDone()
             }
