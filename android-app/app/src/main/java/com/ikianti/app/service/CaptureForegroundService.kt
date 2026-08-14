@@ -103,9 +103,9 @@ class CaptureForegroundService : Service() {
         }
 
         when (command) {
-            "photo"    -> CameraCapture(this).captureAndUpload(onDone)
-            "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10, onDone = onDone)
-            "location" -> LocationCapture(this).fetchAndUpload(onDone)
+            "photo"    -> CameraCapture(this).captureAndUpload { onDone() }
+            "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10) { onDone() }
+            "location" -> LocationCapture(this).fetchAndUpload { onDone() }
             else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); isBusy = false }
         }
     }
