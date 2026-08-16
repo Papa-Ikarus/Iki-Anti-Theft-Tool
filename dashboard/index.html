@@ -106,7 +106,9 @@
     let authToken       = null;
     let selectedDevice  = null;
     let allDevices      = [];
-    let markers         = {}; // deviceId → Leaflet-Marker
+    let markers         = {}; // deviceId → Leaflet-Marker (aktueller Standort)
+    let routeLayers     = {}; // deviceId → Leaflet-Polyline (Verlauf)
+    let historyMarkers  = {}; // deviceId → Array von Leaflet-CircleMarkern
     let map;
 
     // ── Login ───────────────────────────────────────────────────────────────
@@ -140,6 +142,47 @@
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         attribution: "© OpenStreetMap", maxZoom: 19,
       }).addTo(map);
+    }
+
+    async function loadLocationHistory(deviceId) {
+      const since = Date.now() - 24 * 60 * 60 * 1000;
+      const { data } = await supabase
+        .from("locations")
+        .select("lat, lng, timestamp")
+        .eq("device_id", deviceId)
+        .gte("timestamp", since)
+        .order("timestamp", { ascending: true });
+
+      if (!data || data.length < 2) return;
+
+      const color = DEVICE_COLORS[allDevices.findIndex(d => d.id === deviceId) % DEVICE_COLORS.length];
+
+      // Alte Route entfernen
+      if (routeLayers[deviceId]) map.removeLayer(routeLayers[deviceId]);
+      if (historyMarkers[deviceId]) historyMarkers[deviceId].forEach(m => map.removeLayer(m));
+
+      // Route als gestrichelte Linie
+      const coords = data.map(p => [p.lat, p.lng]);
+      routeLayers[deviceId] = L.polyline(coords, {
+        color, weight: 3, opacity: 0.7, dashArray: "6,4"
+      }).addTo(map);
+
+      // Kleine Zeitstempel-Punkte
+      historyMarkers[deviceId] = data.map(p => {
+        const time = new Date(p.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+        return L.circleMarker([p.lat, p.lng], {
+          radius: 4, color, fillColor: color, fillOpacity: 0.8, weight: 1
+        }).bindPopup(`📍 ${time} Uhr`).addTo(map);
+      });
+
+      // Startpunkt grün
+      const first = data[0];
+      const startTime = new Date(first.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+      L.circleMarker([first.lat, first.lng], {
+        radius: 7, color: "#16a34a", fillColor: "#16a34a", fillOpacity: 1, weight: 2
+      }).bindPopup(`🟢 Start: ${startTime} Uhr`).addTo(map);
+
+      map.fitBounds(routeLayers[deviceId].getBounds(), { padding: [30, 30] });
     }
 
     function getMarkerIcon(color) {
@@ -202,7 +245,7 @@
       document.getElementById("status").textContent = `Gerät: ${deviceId}`;
       loadReports();
       loadUsageStats();
-      // Karte auf ausgewähltes Gerät zentrieren
+      loadLocationHistory(deviceId);
       if (markers[deviceId]) map.panTo(markers[deviceId].getLatLng());
     };
 
@@ -213,6 +256,8 @@
           payload => {
             const { device_id, lat, lng } = payload.new;
             updateMarker(device_id, lat, lng);
+            // Route für dieses Gerät neu laden
+            loadLocationHistory(device_id);
           })
         .subscribe();
     }
