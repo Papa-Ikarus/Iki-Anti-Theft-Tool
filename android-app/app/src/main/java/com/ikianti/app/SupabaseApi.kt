@@ -151,9 +151,9 @@ object SupabaseApi {
 
     fun insertUsageLogs(jsonArray: String, onDone: () -> Unit) {
         val request = Request.Builder()
-            .url("$SUPABASE_URL/rest/v1/usage_logs")
+            .url("$SUPABASE_URL/rest/v1/usage_logs?on_conflict=device_id,date,app_package")
             .headers(anonHeaders())
-            .header("Prefer", "resolution=merge-duplicates") // upsert bei Duplikaten
+            .header("Prefer", "resolution=merge-duplicates")
             .post(jsonArray.toRequestBody(JSON_MEDIA))
             .build()
 
