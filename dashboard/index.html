@@ -298,22 +298,30 @@
       if (!selectedDevice) return;
       const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
       const { data } = await supabase.from("usage_logs")
-        .select("app_name, app_package, total_time_ms")
+        .select("app_name, app_package, total_time_ms, first_time_used, last_used")
         .eq("device_id", selectedDevice).eq("date", yesterday)
         .order("total_time_ms", { ascending: false }).limit(15);
 
       const list = document.getElementById("usage-list");
       if (!data?.length) { list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten.</em>'; return; }
       const max = data[0].total_time_ms;
+      const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : null;
       list.innerHTML = data.map(u => {
-        const mins = Math.round(u.total_time_ms / 60000);
-        const time = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
-        const pct  = Math.round((u.total_time_ms / max) * 100);
+        const mins  = Math.round(u.total_time_ms / 60000);
+        const time  = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
+        const pct   = Math.round((u.total_time_ms / max) * 100);
+        const first = fmt(u.first_time_used);
+        const last  = fmt(u.last_used);
+        const times = first && last
+          ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">🕐 ${first} – ${last} Uhr</div>`
+          : "";
         return `<div class="report-item">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span>${u.app_name || u.app_package}</span><span style="color:#64748b;font-size:13px">${time}</span>
+          <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+            <span>${u.app_name || u.app_package}</span>
+            <span style="color:#64748b;font-size:13px">${time}</span>
           </div>
-          <div style="background:#f1f5f9;border-radius:4px;height:6px">
+          ${times}
+          <div style="background:#f1f5f9;border-radius:4px;height:6px;margin-top:4px">
             <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
           </div>
         </div>`;
