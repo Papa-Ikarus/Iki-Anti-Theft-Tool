@@ -79,6 +79,7 @@ class UsageStatsCapture(private val context: Context) {
                 put("app_package", stat.packageName)
                 put("app_name", appName)
                 put("total_time_ms", stat.totalTimeInForeground)
+                put("first_time_used", stat.firstTimeStamp)
                 put("last_used", stat.lastTimeUsed)
             })
         }
