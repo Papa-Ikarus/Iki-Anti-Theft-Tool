@@ -1,46 +1,83 @@
-# Iki Das Anti Theft Tool
+# 🔐 Iki Anti-Theft Tool
 
-Diebstahlschutz-Tool für ein privates Zweit-Android-Handy. Ermöglicht das
-Fernauslösen von Foto-Snapshot, Audio-Aufnahme und Standortabfrage über
-Firebase Cloud Messaging (FCM), sowie die Anzeige des letzten Standorts
-auf einer Karte im Web-Dashboard.
+Ein eigenes Anti-Theft-System für Android mit Web-Dashboard, Standortüberwachung, Fernbefehlen, App-Nutzungsstatistik und automatischen Tagesberichten.
 
-⚠️ **Nur für Geräte, die dir gehören / die du kontrollierst.** Der Einsatz
-auf Geräten anderer Personen ohne deren Wissen ist rechtlich problematisch
-(Stalkerware) – nicht Zweck dieses Projekts.
+Das Projekt besteht aus einer Android-App auf dem überwachten Gerät und einem Web-Dashboard zur Überwachung und Steuerung.
 
-## Architektur
+---
 
-```
-┌─────────────────┐        FCM Push         ┌───────────────────┐
-│  Web-Dashboard   │ ───────────────────────▶│  Android-App       │
-│  (dashboard/)    │                          │  (android-app/)    │
-│  Firebase Hosting│◀─────────────────────────│  Foreground Service│
-└─────────────────┘   Firestore + Storage    └───────────────────┘
-        │                     ▲
-        │  Cloud Function     │  Upload Foto / Audio / Standort
-        ▼                     │
-┌─────────────────┐           │
-│ functions/       │──────────┘
-│ (sendet FCM via  │
-│  Admin SDK)       │
-└─────────────────┘
-```
+## 📌 Projektstatus
 
-## Ordnerstruktur
+**Aktive Entwicklung**
 
-- `android-app/` – Android-App (Kotlin), läuft auf dem Zweithandy
-- `dashboard/` – Web-Dashboard (Firebase Hosting), zeigt Karte + Steuerung
-- `functions/` – Firebase Cloud Function, löst den FCM-Trigger aus
-- `docs/SETUP.md` – Schritt-für-Schritt Firebase-Einrichtung
+Das Grundsystem ist funktionsfähig und wird aktuell weiter ausgebaut und stabilisiert.
 
-## Quick Start
+### Bereits umgesetzt
 
-Siehe [`docs/SETUP.md`](docs/SETUP.md) für die vollständige Einrichtung
-(Firebase-Projekt anlegen, Konfigurationsdateien einfügen, App bauen,
-Dashboard deployen).
+- ✅ Android-App
+- ✅ Supabase-Anbindung
+- ✅ Firebase Cloud Messaging (FCM)
+- ✅ Web-Dashboard
+- ✅ Benutzer-Login
+- ✅ Geräteverwaltung
+- ✅ Multi-Device-Unterstützung
+- ✅ Standortübertragung
+- ✅ Echtzeit-Standortupdates
+- ✅ Standortverlauf
+- ✅ Routenanzeige auf der Karte
+- ✅ Zeitstempel der Standortpunkte
+- ✅ Foto-Befehl
+- ✅ Audio-Befehl
+- ✅ Standort-Befehl
+- ✅ App-Nutzungsstatistik
+- ✅ manueller `usage`-Befehl
+- ✅ persistente Befehle über SharedPreferences
+- ✅ automatische Tagesberichte
+- ✅ FCM-Benachrichtigung für Tagesberichte
+- ✅ Google-Maps-Routenlink im Tagesbericht
+- ✅ Top-App-Nutzung im Tagesbericht
+- ✅ Report-Upsert gegen doppelte Tagesberichte
+- ✅ Verarbeitung mehrerer Geräte
 
-## Status
+---
 
-🚧 Grundgerüst – Firebase-Konfiguration und echte Capture-Logik müssen
-noch ergänzt werden (siehe TODOs in den jeweiligen Dateien).
+# 🏗️ Architektur
+
+Das Projekt besteht aus mehreren Komponenten:
+
+```text
+┌──────────────────────┐
+│     Android-App      │
+│   Überwachtes Gerät  │
+└──────────┬───────────┘
+           │
+           │ HTTPS / FCM
+           ▼
+┌──────────────────────┐
+│       Supabase       │
+│                      │
+│  PostgreSQL          │
+│  Edge Functions      │
+│  Storage             │
+│  Authentication      │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│   Web-Dashboard      │
+│                      │
+│ Karte                │
+│ Geräte               │
+│ Befehle              │
+│ App-Nutzung          │
+│ Tagesberichte        │
+└──────────────────────┘
+
+          ▲
+          │
+          │ FCM
+          │
+┌──────────────────────┐
+│       Firebase       │
+│         FCM          │
+└──────────────────────┘
