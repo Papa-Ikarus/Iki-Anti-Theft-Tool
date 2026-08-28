@@ -121,23 +121,25 @@ targetSdk:  33
 Java:       17
 ```
 
-🌐 Web-Dashboard
+---
+# 🌐 Web-Dashboard
 
 Das Dashboard ist eine Web-Anwendung und wird über Firebase Hosting bereitgestellt.
 
+
 Das Dashboard ermöglicht:
 
-🔐 Anmeldung
+# 🔐 Anmeldung
 
 Login über Supabase Authentication.
 
-📱 Geräteverwaltung
+# 📱 Geräteverwaltung
 
 Alle registrierten Geräte werden angezeigt.
 
 Bei mehreren Geräten kann zwischen den Geräten gewechselt werden.
 
-📍 Standort
+# 📍 Standort
 
 Das Dashboard zeigt:
 
@@ -149,7 +151,7 @@ Zeitstempel der Standortpunkte
 
 Die Karte verwendet Leaflet und OpenStreetMap.
 
-🎛️ Fernbefehle
+# 🎛️ Fernbefehle
 
 Folgende Befehle stehen zur Verfügung:
 
@@ -169,12 +171,10 @@ Nutzungsdauer
 Startzeit
 letzter Aufruf
 
-
+---
 ☁️ Supabase
 
 Supabase ist die zentrale Backend-Plattform des Projekts.
-
-
 
 Verwendete Komponenten:
 
@@ -192,41 +192,46 @@ locations
 usage_logs
 reports
 owner
+```
 
-🗄️ Datenbank
+---
+## 🗄️ Datenbank
 
-devices
-
+<mark>devices</mark>
 
 Registrierte Android-Geräte.
 
 Wichtige Felder:
 
-´´´´text
+```text
 id
 fcm_token
 last_seen
 last_boot
 created_at
+```
 
-locations
+---
+<mark>locations</mark>
 
 Standortdaten der Geräte.
 
 
 Wichtige Felder:
 
-´´´´text
+```text
 id
 device_id
 lat
 lng
 timestamp
 created_at
+```
 
-Standorte sind über device_id einem Gerät zugeordnet.
+Standorte sind über <mark>device_id</mark> einem Gerät zugeordnet.
+---
 
-usage_logs
+<mark>usage_logs</mark>
 
 
 Speichert die App-Nutzung.
@@ -234,7 +239,7 @@ Speichert die App-Nutzung.
 
 Unter anderem:
 
-´´´´text
+```text
 device_id
 date
 app_name
@@ -242,16 +247,18 @@ app_package
 total_time_ms
 start_time
 last_used_time
+```
 
 Die App-Nutzung wird nach Gerät und Datum verarbeitet.
+---
 
-reports
+<mark>reports</mark>
 
 Speichert die erzeugten Tagesberichte.
 
 Unter anderem:
 
-´´´´text
+```text
 date
 device_id
 location_count
@@ -263,25 +270,28 @@ last_lat
 last_lng
 maps_url
 created_at
+```
 
 Für einen Tag und ein Gerät darf nur ein Tagesbericht existieren.
 
 Dafür wird ein eindeutiger Schlüssel verwendet:
 
-´´´´text
+```text
 (date, device_id)
+```
 
 Der Daily Report verwendet deshalb einen Upsert.
+---
 
-owner
-
+<mark>owner</mark>
 
 Speichert den FCM-Token des Dashboards.
 
 Das Dashboard kann dadurch über neue Tagesberichte informiert werden.
+---
 
 
-📍 Standortüberwachung
+## 📍 Standortüberwachung
 
 Die Android-App übermittelt Standortpunkte an Supabase.
 
@@ -290,37 +300,41 @@ Das Dashboard kann diese Daten anschließend darstellen.
 Der Standortverlauf der letzten 24 Stunden wird als Route dargestellt.
 
 Zusätzlich werden einzelne Standortpunkte mit Zeitstempeln angezeigt.
+---
 
 
-📊 App-Nutzung
+## 📊 App-Nutzung
 
 Die Android-App erfasst die Nutzung installierter Apps.
 
-Die Daten werden in usage_logs gespeichert.
+Die Daten werden in <mark>usage_logs</mark> gespeichert.
 
 Das Dashboard kann die Daten für das ausgewählte Gerät abrufen.
 
 Zusätzlich kann über den Button:
 
-´´´´text
-📊 App-Nutzung
+```text
+ 📊 App-Nutzung
+```
 
 eine sofortige Abfrage ausgelöst werden.
+---
 
 
-📋 Tagesbericht
+## 📋 Tagesbericht
 
 Der Tagesbericht wird automatisch über die Supabase Edge Function
 
-´´´´text
+```text
 daily-report
+```
 
 erstellt.
 
 
 Ablauf
 
-´´´´text
+```text
 cron-job.org
       │
       ▼
@@ -347,8 +361,11 @@ Standorte der letzten 24 Stunden laden
               │
               ▼
         Dashboard
+```
+---
 
-# ⏰ Automatischer Daily Report
+
+## ⏰ Automatischer Daily Report
 
 Der Daily Report wird über `cron-job.org` automatisch ausgelöst.
 
@@ -370,46 +387,53 @@ Die genaue Uhrzeit und Frequenz kann in `cron-job.org` angepasst werden.
 Die Edge Function verarbeitet dabei alle registrierten Geräte.
 
 Durch die eindeutige Zuordnung eines Reports zu `date` und `device_id` werden bei wiederholten Aufrufen keine doppelten Tagesberichte für dasselbe Gerät und Datum erzeugt.
+---
 
 
-🔔 Firebase Cloud Messaging
+## 🔔 Firebase Cloud Messaging
 
 Firebase wird im Projekt hauptsächlich für Push-Benachrichtigungen verwendet.
 
 Verwendung:
 
-´´´´text
+```text
 Android → FCM
 Dashboard → FCM
 Daily Report → FCM
+```
 
 Firebase ist damit nicht die eigentliche Datenbank des Systems.
 
 Die persistenten Projektdaten liegen in Supabase.
+---
 
-🔐 Sicherheit
+
+## 🔐 Sicherheit
 
 Sensible Zugangsdaten dürfen niemals in das Git-Repository eingecheckt werden.
 
 Dazu gehören insbesondere:
-´´´´text
+```text
 SUPABASE_SERVICE_ROLE_KEY
 DAILY_REPORT_SECRET
 FIREBASE_SERVICE_ACCOUNT
+```
 
 Der Service-Role-Key darf ausschließlich serverseitig verwendet werden.
 
 Der Daily Report wird über
-´´´´text
+```text
 Authorization: Bearer <DAILY_REPORT_SECRET>
+```
 
 authentifiziert.
 
 Die Edge Function prüft diesen Header vor der Verarbeitung.
+---
 
 
-🗂️ Projektstruktur
-´´´´text
+## 🗂️ Projektstruktur
+```text
 Iki-Anti-Theft-Tool/
 │
 ├── android-app/
@@ -439,13 +463,16 @@ Iki-Anti-Theft-Tool/
 │
 ├── README.md
 └── firebase.json
+```
+---
 
 
-⚙️ Einrichtung
+## ⚙️ Einrichtung
 
 Eine vollständige Installationsanleitung befindet sich in:
-´´´´text
+```text
 docs/SETUP.md
+```
 
 Dort werden unter anderem beschrieben:
 
@@ -458,77 +485,97 @@ Secrets
 Daily Report
 Firebase Hosting
 Android-App
-🧪 Entwicklung
+---
+
+
+## 🧪 Entwicklung
 Android-App
 
 Das Verzeichnis
-´´´´text
+```text
 android-app/
+```
 
 kann mit Android Studio geöffnet werden.
 
 Dashboard
 
 Das Dashboard befindet sich unter:
-´´´´text
+```text
 dashboard/
+```
 
 
 Supabase Edge Functions
 
 Wichtige Funktionen:
-´´´´text
+```text
 send-command
 daily-report
+```
 
 Deployment erfolgt über die Supabase CLI:
-´´´´´text
+```text
 supabase functions deploy send-command
 supabase functions deploy daily-report
+```
+---
 
 
-🛠️ Hilfreiche ADB-Befehle
+## 🛠️ Hilfreiche ADB-Befehle
 
 Die App kann nach dem Verstecken des Launcher-Icons weiterhin direkt gestartet werden:
-´´´´text
+```text
 adb shell am start -n com.ikianti.app/.MainActivity
+```
 
 ADB-Logs können beispielsweise gefiltert werden mit:
-´´´´text
+```text
 adb logcat -s "SupabaseApi" "UsageStatsCapture" "CaptureFGS"
+```
+---
 
 
-📝 Dokumentation
+## 📝 Dokumentation
 
 Weitere technische Dokumentation befindet sich unter:
-´´´´text
+```text
 docs/
+```
 
 Besonders relevant:
-´´´´text
+```text
 docs/SETUP.md
 DAILY_REPORT_ARCHITECTURE.md
+```
+---
 
-🚧 Aktuelle Entwicklung
+
+## 🚧 Aktuelle Entwicklung
 
 Das Projekt befindet sich weiterhin in aktiver Entwicklung.
 
 Aktuelle Schwerpunkte:
 
 Stabilisierung der App-Nutzung
-zuverlässige Synchronisation der usage_logs
+zuverlässige Synchronisation der <mark>usage_logs</mark>
 Stabilisierung des Daily Reports
 weitere Verbesserungen am Dashboard
 Multi-Device-Optimierung
 Fehlerbehandlung bei Offline-/Online-Wechseln
 Verbesserung der Persistenz von Befehlen
-📜 Lizenz
+---
+
+
+## 📜 Lizenz
 
 Dieses Projekt befindet sich derzeit in privater Entwicklung.
 
 Eine endgültige Open-Source-Lizenz ist noch nicht festgelegt.
+---
 
-👨‍💻 Projekt
+
+## 👨‍💻 Projekt
 
 Iki Anti-Theft Tool
 
