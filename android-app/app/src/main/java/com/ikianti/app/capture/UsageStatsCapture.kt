@@ -66,8 +66,8 @@ class UsageStatsCapture(private val context: Context) {
             onDone(); return
         }
 
-        val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-            .format(java.util.Date(since))
+val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+    .format(java.util.Date(now))
 
         // Batch-Upload als JSON-Array (ein REST-Call für alle Apps)
         val entries = JSONArray()

@@ -73,10 +73,28 @@
     <div id="status">Gerät auswählen…</div>
   </div>
 
-  <div class="card">
-    <h3>App-Nutzung gestern</h3>
-    <div id="usage-list"><em style="color:#94a3b8;font-size:13px;">Wird geladen…</em></div>
+<div class="card">
+  <h3>App-Nutzung</h3>
+
+  <div style="display:flex;gap:8px;margin-bottom:12px;">
+    <button id="usage-today-btn"
+            onclick="selectUsageDay('today')"
+            style="flex:1;background:#2563eb;">
+      Heute
+    </button>
+
+    <button id="usage-yesterday-btn"
+            onclick="selectUsageDay('yesterday')"
+            style="flex:1;background:#475569;">
+      Gestern
+    </button>
   </div>
+
+  <div id="usage-list">
+    <em style="color:#94a3b8;font-size:13px;">Wird geladen…</em>
+  </div>
+</div>
+
 
   <div class="card">
     <h3>Tagesberichte</h3>
@@ -350,39 +368,118 @@ window.refreshDashboard = async function () {
   }
 };
     // ── App-Nutzung ─────────────────────────────────────────────────────────
-    async function loadUsageStats() {
-      if (!selectedDevice) return;
-      const yesterday = new Date(Date.now() - 86400000).toISOString().split("T")[0];
-      const { data } = await supabase.from("usage_logs")
-        .select("app_name, app_package, total_time_ms, first_time_used, last_used")
-        .eq("device_id", selectedDevice).eq("date", yesterday)
-        .order("total_time_ms", { ascending: false }).limit(15);
+let selectedUsageDay = "today";
 
-      const list = document.getElementById("usage-list");
-      if (!data?.length) { list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten.</em>'; return; }
-      const max = data[0].total_time_ms;
-      const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : null;
-      list.innerHTML = data.map(u => {
-        const mins  = Math.round(u.total_time_ms / 60000);
-        const time  = mins >= 60 ? `${Math.floor(mins/60)}h ${mins%60}Min` : `${mins} Min`;
-        const pct   = Math.round((u.total_time_ms / max) * 100);
-        const first = fmt(u.first_time_used);
-        const last  = fmt(u.last_used);
-        const times = first && last
-          ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">🕐 ${first} – ${last} Uhr</div>`
-          : "";
-        return `<div class="report-item">
-          <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-            <span>${u.app_name || u.app_package}</span>
-            <span style="color:#64748b;font-size:13px">${time}</span>
-          </div>
-          ${times}
-          <div style="background:#f1f5f9;border-radius:4px;height:6px;margin-top:4px">
-            <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
-          </div>
-        </div>`;
-      }).join("");
-    }
+window.selectUsageDay = async function(day) {
+  selectedUsageDay = day;
+
+  const todayBtn = document.getElementById("usage-today-btn");
+  const yesterdayBtn = document.getElementById("usage-yesterday-btn");
+
+  if (todayBtn && yesterdayBtn) {
+    todayBtn.style.background =
+      day === "today" ? "#2563eb" : "#475569";
+
+    yesterdayBtn.style.background =
+      day === "yesterday" ? "#2563eb" : "#475569";
+  }
+
+  await loadUsageStats();
+};
+
+function getLocalDate(offsetDays = 0) {
+  const date = new Date();
+  date.setDate(date.getDate() + offsetDays);
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+async function loadUsageStats() {
+  if (!selectedDevice) return;
+
+  const usageDate =
+    selectedUsageDay === "today"
+      ? getLocalDate(0)
+      : getLocalDate(-1);
+
+  const { data, error } = await supabase
+    .from("usage_logs")
+    .select(
+      "app_name, app_package, total_time_ms, first_time_used, last_used"
+    )
+    .eq("device_id", selectedDevice)
+    .eq("date", usageDate)
+    .order("total_time_ms", { ascending: false })
+    .limit(15);
+    console.log("USAGE RESULT:", { data, error, count: data?.length });
+    
+
+  const list = document.getElementById("usage-list");
+
+  if (error) {
+    console.error("Fehler beim Laden der App-Nutzung:", error);
+    list.innerHTML =
+      '<em style="color:#ef4444;font-size:13px;">Fehler beim Laden.</em>';
+    return;
+  }
+
+  if (!data?.length) {
+    list.innerHTML =
+      '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten.</em>';
+    return;
+  }
+
+  const max = data[0].total_time_ms || 1;
+
+  const fmt = ts =>
+    ts
+      ? new Date(ts).toLocaleTimeString("de-DE", {
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      : null;
+
+  list.innerHTML = data.map(u => {
+    const mins = Math.round(u.total_time_ms / 60000);
+
+    const time =
+      mins >= 60
+        ? `${Math.floor(mins / 60)}h ${mins % 60}Min`
+        : `${mins} Min`;
+
+    const pct = Math.round(
+      (u.total_time_ms / max) * 100
+    );
+
+    const first = fmt(u.first_time_used);
+    const last = fmt(u.last_used);
+
+    const times =
+      first && last
+        ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
+             🕐 ${first} – ${last} Uhr
+           </div>`
+        : "";
+
+    return `<div class="report-item">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+        <span>${u.app_name || u.app_package}</span>
+        <span style="color:#64748b;font-size:13px">${time}</span>
+      </div>
+
+      ${times}
+
+      <div style="background:#f1f5f9;border-radius:4px;height:6px;margin-top:4px">
+        <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
 
     // ── Tagesberichte ────────────────────────────────────────────────────────
     async function loadReports() {
