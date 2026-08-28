@@ -4,7 +4,8 @@ Ein eigenes Anti-Theft-System für Android mit Web-Dashboard, Standortüberwachu
 
 Das Projekt besteht aus einer Android-App auf dem überwachten Gerät und einem Web-Dashboard zur Überwachung und Steuerung.
 
-Die App darf nur auf Privaten Geräte installiert oder gesteuert werden jede andere Nutzung ist Untersagt und nicht erlaubt  <mark>STALKERWARE</mark>
+Die App darf nur auf Privaten Geräte installiert oder gesteuert werden 
+Jede andere Nutzung ist Untersagt und nicht erlaubt  <mark>STALKERWARE</mark>
 
 ---
 
