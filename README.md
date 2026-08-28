@@ -81,7 +81,7 @@ Das Projekt besteht aus mehreren Komponenten:
 │       Firebase       │
 │         FCM          │
 └──────────────────────┘
-´´´´text
+´´´
 
 
 
