@@ -43,7 +43,12 @@
     <div id="login-error"></div>
   </div>
 
-  <header>📍 Iki Das Anti Theft Tool</header>
+  <header style="display:flex;justify-content:space-between;align-items:center;">
+  <span>📍 Iki Das Anti Theft Tool</span>
+  <button onclick="refreshDashboard()" style="flex:none;min-width:auto;padding:7px 12px;font-size:13px;background:#475569;">
+    🔄 Aktualisieren
+  </button>
+</header>
   <div id="map"></div>
 
   <div class="card">
@@ -111,6 +116,15 @@
     let routeLayers     = {}; // deviceId → Leaflet-Polyline (Verlauf)
     let historyMarkers  = {}; // deviceId → Array von Leaflet-CircleMarkern
     let map;
+    async function restoreSession() {
+  const { data } = await supabase.auth.getSession();
+
+  if (data.session) {
+    authToken = data.session.access_token;
+    document.getElementById("login-screen").style.display = "none";
+    await init();
+  }
+}
 
     // ── Login ───────────────────────────────────────────────────────────────
     window.login = async function () {
@@ -136,7 +150,27 @@
         document.getElementById("status").textContent = `🔔 ${payload.notification.title}: ${payload.notification.body}`;
       });
     }
+window.refreshDashboard = async function () {
+  if (!authToken || !selectedDevice) return;
 
+  document.getElementById("status").textContent = "🔄 Aktualisiere Dashboard…";
+
+  try {
+    await loadDevices();
+    await loadReports();
+    await loadUsageStats();
+
+    if (selectedDevice) {
+      await loadLocationHistory(selectedDevice);
+    }
+
+    document.getElementById("status").textContent =
+      `✅ Aktualisiert – ${new Date().toLocaleTimeString("de-DE")}`;
+  } catch (err) {
+    document.getElementById("status").textContent =
+      `❌ Aktualisierung fehlgeschlagen: ${err.message}`;
+  }
+};
     // ── Karte ───────────────────────────────────────────────────────────────
     function initMap() {
       map = L.map("map").setView([51.5, 7.0], 6);
@@ -292,7 +326,29 @@
         document.getElementById("status").textContent = `❌ ${err.message}`;
       }
     };
+window.refreshDashboard = async function () {
+  if (!authToken || !selectedDevice) {
+    document.getElementById("status").textContent =
+      "⚠️ Erst ein Gerät auswählen";
+    return;
+  }
 
+  document.getElementById("status").textContent =
+    "🔄 Aktualisiere Dashboard…";
+
+  try {
+    await loadDevices();
+    await loadReports();
+    await loadUsageStats();
+    await loadLocationHistory(selectedDevice);
+
+    document.getElementById("status").textContent =
+      `✅ Aktualisiert – ${new Date().toLocaleTimeString("de-DE")}`;
+  } catch (err) {
+    document.getElementById("status").textContent =
+      `❌ Aktualisierung fehlgeschlagen: ${err.message}`;
+  }
+};
     // ── App-Nutzung ─────────────────────────────────────────────────────────
     async function loadUsageStats() {
       if (!selectedDevice) return;
@@ -345,6 +401,7 @@
           <div class="report-meta">${fmt(r.first_timestamp)} – ${fmt(r.last_timestamp)} Uhr</div>
         </div>`).join("");
     }
+    restoreSession();
   </script>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
