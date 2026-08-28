@@ -81,10 +81,11 @@ Das Projekt besteht aus mehreren Komponenten:
 │       Firebase       │
 │         FCM          │
 └──────────────────────┘
+´´´´text
 
 
 
-📱 Android-App
+# 📱 Android-App
 
 Die Android-App läuft auf dem überwachten Gerät.
 
