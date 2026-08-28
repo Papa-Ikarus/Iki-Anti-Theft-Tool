@@ -119,6 +119,7 @@ compileSdk: 36
 minSdk:     26
 targetSdk:  33
 Java:       17
+```
 
 🌐 Web-Dashboard
 
