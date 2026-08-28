@@ -159,7 +159,9 @@ Folgende Befehle stehen zur Verfügung:
 🎙️ Audio
 📍 Standort
 📊 App-Nutzung
-📊 App-Nutzung
+
+
+## 📊 App-Nutzung
 
 Das Dashboard kann die App-Nutzung des ausgewählten Geräts anzeigen.
 
@@ -331,6 +333,7 @@ daily-report
 
 erstellt.
 
+---
 
 Ablauf
 
