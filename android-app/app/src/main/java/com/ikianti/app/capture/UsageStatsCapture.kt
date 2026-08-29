@@ -35,58 +35,99 @@ class UsageStatsCapture(private val context: Context) {
         )
     }
 
-    fun collectAndUpload(onDone: () -> Unit) {
-        val usageManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
-            as? UsageStatsManager ?: run {
-            Log.e(TAG, "UsageStatsManager nicht verfügbar")
-            onDone(); return
-        }
-
-        val now   = System.currentTimeMillis()
-        val since = now - TimeUnit.HOURS.toMillis(24)
-
-        val stats = usageManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY, since, now
-        )
-
-        if (stats.isNullOrEmpty()) {
-            Log.w(TAG, "Keine Nutzungsdaten verfügbar – Permission erteilt?")
-            onDone(); return
-        }
-
-        // Filtern: nur Apps mit tatsächlicher Nutzung, keine System-Apps
-        val relevant = stats
-            .filter { it.totalTimeInForeground > 0 }
-            .filter { it.packageName !in IGNORED_PACKAGES }
-            .sortedByDescending { it.totalTimeInForeground }
-            .take(30) // max. 30 Apps pro Tag
-
-        if (relevant.isEmpty()) {
-            Log.d(TAG, "Keine relevanten Nutzungsdaten")
-            onDone(); return
-        }
-
-val date = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
-    .format(java.util.Date(now))
-
-        // Batch-Upload als JSON-Array (ein REST-Call für alle Apps)
-        val entries = JSONArray()
-        relevant.forEach { stat ->
-            val appName = getAppName(stat.packageName)
-            entries.put(JSONObject().apply {
-                put("device_id", DeviceManager.getDeviceId(context))
-                put("date", date)
-                put("app_package", stat.packageName)
-                put("app_name", appName)
-                put("total_time_ms", stat.totalTimeInForeground)
-                put("first_time_used", stat.firstTimeStamp)
-                put("last_used", stat.lastTimeUsed)
-            })
-        }
-
-        Log.d(TAG, "Lade ${relevant.size} App-Nutzungseinträge hoch")
-        SupabaseApi.insertUsageLogs(entries.toString(), onDone)
+fun collectAndUpload(onDone: () -> Unit) {
+    val usageManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
+        as? UsageStatsManager ?: run {
+        Log.e(TAG, "UsageStatsManager nicht verfügbar")
+        onDone()
+        return
     }
+
+    val now = System.currentTimeMillis()
+    val since = now - TimeUnit.HOURS.toMillis(24)
+
+    val stats = usageManager.queryUsageStats(
+        UsageStatsManager.INTERVAL_DAILY,
+        since,
+        now
+    )
+
+    if (stats.isNullOrEmpty()) {
+        Log.w(TAG, "Keine Nutzungsdaten verfügbar – Permission erteilt?")
+        onDone()
+        return
+    }
+
+    // Gleiche Apps zusammenfassen.
+    // queryUsageStats() kann mehrere UsageStats-Einträge
+    // für dasselbe Paket zurückgeben.
+    val relevant = stats
+        .filter { it.totalTimeInForeground > 0 }
+        .filter { it.packageName !in IGNORED_PACKAGES }
+        .groupBy { it.packageName }
+        .map { (packageName, appStats) ->
+            val totalTime = appStats.sumOf { it.totalTimeInForeground }
+
+            val firstTime = appStats
+                .map { it.firstTimeStamp }
+                .filter { it > 0L }
+                .minOrNull() ?: 0L
+
+            val lastTime = appStats
+                .maxOfOrNull { it.lastTimeUsed }
+                ?: 0L
+
+            Triple(
+                packageName,
+                totalTime,
+                Pair(firstTime, lastTime)
+            )
+        }
+        .sortedByDescending { it.second }
+        .take(30)
+
+    if (relevant.isEmpty()) {
+        Log.d(TAG, "Keine relevanten Nutzungsdaten")
+        onDone()
+        return
+    }
+
+    // Datum des aktuellen Kalendertages.
+    val date = java.text.SimpleDateFormat(
+        "yyyy-MM-dd",
+        java.util.Locale.getDefault()
+    ).format(java.util.Date(now))
+
+    // Batch-Upload als JSON-Array.
+    val entries = JSONArray()
+
+    relevant.forEach { (packageName, totalTime, times) ->
+        val appName = getAppName(packageName)
+
+        entries.put(JSONObject().apply {
+            put(
+                "device_id",
+                DeviceManager.getDeviceId(context)
+            )
+            put("date", date)
+            put("app_package", packageName)
+            put("app_name", appName)
+            put("total_time_ms", totalTime)
+            put("first_time_used", times.first)
+            put("last_used", times.second)
+        })
+    }
+
+    Log.d(
+        TAG,
+        "Lade ${relevant.size} zusammengefasste App-Nutzungseinträge hoch"
+    )
+
+    SupabaseApi.insertUsageLogs(
+        entries.toString(),
+        onDone
+    )
+}<
 
     private fun getAppName(packageName: String): String {
         return try {

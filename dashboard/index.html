@@ -415,7 +415,6 @@ async function loadUsageStats() {
     .eq("date", usageDate)
     .order("total_time_ms", { ascending: false })
     .limit(15);
-    console.log("USAGE RESULT:", { data, error, count: data?.length });
     
 
   const list = document.getElementById("usage-list");
