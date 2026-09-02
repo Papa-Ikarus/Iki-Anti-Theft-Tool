@@ -150,27 +150,42 @@ object SupabaseApi {
     // ── App-Nutzungsstatistiken hochladen (Batch) ─────────────────────────────
 
     fun insertUsageLogs(jsonArray: String, onDone: () -> Unit) {
-        val request = Request.Builder()
-            .url("$SUPABASE_URL/rest/v1/usage_logs?on_conflict=device_id,date,app_package")
-            .headers(anonHeaders())
-            .header("Prefer", "resolution=merge-duplicates")
-            .post(jsonArray.toRequestBody(JSON_MEDIA))
-            .build()
 
-        client.newCall(request).enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "insertUsageLogs fehlgeschlagen", e)
-                onDone()
+    Log.d(TAG, "insertUsageLogs() aufgerufen")
+    Log.d(TAG, "JSON-Länge: ${jsonArray.length}")
+
+    val request = Request.Builder()
+        .url("$SUPABASE_URL/rest/v1/usage_logs?on_conflict=device_id,date,app_package")
+        .headers(anonHeaders())
+        .header("Prefer", "resolution=merge-duplicates")
+        .post(jsonArray.toRequestBody(JSON_MEDIA))
+        .build()
+
+    Log.d(TAG, "Sende UsageLogs-Request an Supabase...")
+
+    client.newCall(request).enqueue(object : Callback {
+
+        override fun onFailure(call: Call, e: IOException) {
+            Log.e(TAG, "insertUsageLogs Netzwerk-Fehler", e)
+            onDone()
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+
+            val responseBody = response.body?.string()
+
+            Log.d(TAG, "UsageLogs HTTP ${response.code}")
+            Log.d(TAG, "UsageLogs Response: $responseBody")
+
+            if (!response.isSuccessful) {
+                Log.e(TAG, "UsageLogs-Fehler ${response.code}: $responseBody")
             }
-            override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
-                    Log.e(TAG, "UsageLogs-Fehler ${response.code}: ${response.body?.string()}")
-                }
-                response.close()
-                onDone()
-            }
-        })
-    }
+
+            response.close()
+            onDone()
+        }
+    })
+}
 
     // ── Header-Helper ─────────────────────────────────────────────────────────
 

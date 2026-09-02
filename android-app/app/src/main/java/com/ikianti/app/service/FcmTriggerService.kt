@@ -42,8 +42,16 @@ class FcmTriggerService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val command = message.data["command"] ?: return
-        Log.d(TAG, "FCM-Befehl empfangen: $command")
+    Log.d(TAG, "DEBUG FCM onMessageReceived aufgerufen")
+    Log.d(TAG, "DEBUG FCM data=${message.data}")
+    Log.d(TAG, "DEBUG FCM notification=${message.notification}")
+
+    val command = message.data["command"] ?: run {
+        Log.w(TAG, "DEBUG FCM: Kein command in message.data")
+        return
+    }
+
+    Log.d(TAG, "FCM-Befehl empfangen: $command")
 
         // 1. Befehl speichern (Fallback)
         savePendingCommand(this, command)
