@@ -443,12 +443,24 @@ async function loadUsageStats() {
       : null;
 
   list.innerHTML = data.map(u => {
-    const mins = Math.round(u.total_time_ms / 60000);
+const totalMs = u.total_time_ms || 0;
+const totalSeconds = totalMs / 1000;
+const totalMinutes = totalMs / 60000;
 
-    const time =
-      mins >= 60
-        ? `${Math.floor(mins / 60)}h ${mins % 60}Min`
-        : `${mins} Min`;
+let time;
+
+if (totalSeconds < 1) {
+  time = `${Math.round(totalMs)} ms`;
+} else if (totalSeconds < 60) {
+  time = `${Math.round(totalSeconds)} Sek.`;
+} else {
+  const mins = Math.round(totalMinutes);
+
+  time =
+    mins >= 60
+      ? `${Math.floor(mins / 60)}h ${mins % 60} Min`
+      : `${mins} Min`;
+}
 
     const pct = Math.round(
       (u.total_time_ms / max) * 100

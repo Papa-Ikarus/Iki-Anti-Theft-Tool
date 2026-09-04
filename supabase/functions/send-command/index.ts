@@ -41,26 +41,44 @@ Deno.serve(async (req) => {
     }
 
     // FCM v1 Push senden
-    const accessToken = await getFcmAccessToken();
-    const projectId = Deno.env.get("FIREBASE_PROJECT_ID")!;
+const accessToken = await getFcmAccessToken();
+const projectId = Deno.env.get("FIREBASE_PROJECT_ID")!;
 
-    const fcmRes = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          message: {
-            token: data.fcm_token,
-            data: { command },
-            android: { priority: "HIGH" },
-          },
-        }),
-      }
-    );
+console.log("FCM PROJECT:", projectId);
+
+console.log("FCM SEND:", {
+  deviceId,
+  tokenPrefix: data.fcm_token?.substring(0, 20),
+  tokenLength: data.fcm_token?.length,
+  command
+});
+
+const fcmRes = await fetch(
+  `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
+  {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: {
+        token: data.fcm_token,
+        data: { command },
+        android: { priority: "HIGH" },
+      },
+    }),
+  }
+);
+
+console.log("FCM SEND:", {
+  deviceId,
+  tokenPrefix: data.fcm_token?.substring(0, 20),
+  tokenLength: data.fcm_token?.length,
+  command
+});
+
+
 
     if (!fcmRes.ok) {
       const err = await fcmRes.text();
