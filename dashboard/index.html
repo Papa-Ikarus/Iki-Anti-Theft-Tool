@@ -467,14 +467,26 @@ if (totalSeconds < 1) {
     );
 
     const first = fmt(u.first_time_used);
-    const last = fmt(u.last_used);
+const last = fmt(u.last_used);
 
-    const times =
-      first && last
-        ? `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
-             🕐 ${first} – ${last} Uhr
-           </div>`
-        : "";
+let times = "";
+
+if (first && last) {
+  const lastDate = new Date(u.last_used);
+  const lastHour = lastDate.getHours();
+  const lastMinute = lastDate.getMinutes();
+
+  // 00:00 bedeutet: Session wurde am Tagesende künstlich begrenzt.
+  if (lastHour === 0 && lastMinute === 0) {
+    times = `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
+      🕐 ${first} – bis Tagesende
+    </div>`;
+  } else {
+    times = `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
+      🕐 ${first} – ${last} Uhr
+    </div>`;
+  }
+}
 
     return `<div class="report-item">
       <div style="display:flex;justify-content:space-between;margin-bottom:2px">
