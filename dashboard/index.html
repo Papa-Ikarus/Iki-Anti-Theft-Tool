@@ -367,7 +367,8 @@ window.refreshDashboard = async function () {
       `❌ Aktualisierung fehlgeschlagen: ${err.message}`;
   }
 };
-    // ── App-Nutzung ─────────────────────────────────────────────────────────
+
+// ── App-Nutzung ─────────────────────────────────────────────────────────
 let selectedUsageDay = "today";
 
 window.selectUsageDay = async function(day) {
@@ -406,6 +407,14 @@ async function loadUsageStats() {
       ? getLocalDate(0)
       : getLocalDate(-1);
 
+  console.log(
+    "App-Nutzung laden:",
+    "device=",
+    selectedDevice,
+    "date=",
+    usageDate
+  );
+
   const { data, error } = await supabase
     .from("usage_logs")
     .select(
@@ -415,93 +424,109 @@ async function loadUsageStats() {
     .eq("date", usageDate)
     .order("total_time_ms", { ascending: false })
     .limit(15);
-    
 
   const list = document.getElementById("usage-list");
 
+  if (!list) {
+    console.error("usage-list nicht gefunden");
+    return;
+  }
+
   if (error) {
     console.error("Fehler beim Laden der App-Nutzung:", error);
+
     list.innerHTML =
       '<em style="color:#ef4444;font-size:13px;">Fehler beim Laden.</em>';
+
     return;
   }
 
   if (!data?.length) {
     list.innerHTML =
-      '<em style="color:#94a3b8;font-size:13px;">Noch keine Daten.</em>';
+      `<em style="color:#94a3b8;font-size:13px;">
+        Keine App-Nutzungsdaten für ${usageDate}.
+      </em>`;
+
     return;
   }
 
+  console.log(
+    `App-Nutzung geladen: ${data.length} Einträge für ${usageDate}`
+  );
+
   const max = data[0].total_time_ms || 1;
 
-  const fmt = ts =>
-    ts
-      ? new Date(ts).toLocaleTimeString("de-DE", {
-          hour: "2-digit",
-          minute: "2-digit"
-        })
-      : null;
+  function fmt(ts) {
+    if (!ts) return null;
+
+    return new Date(Number(ts)).toLocaleTimeString("de-DE", {
+      timeZone: "Europe/Berlin",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
 
   list.innerHTML = data.map(u => {
-const totalMs = u.total_time_ms || 0;
-const totalSeconds = totalMs / 1000;
-const totalMinutes = totalMs / 60000;
+    const totalMs = Number(u.total_time_ms) || 0;
+    const totalSeconds = totalMs / 1000;
+    const totalMinutes = totalMs / 60000;
 
-let time;
+    let time;
 
-if (totalSeconds < 1) {
-  time = `${Math.round(totalMs)} ms`;
-} else if (totalSeconds < 60) {
-  time = `${Math.round(totalSeconds)} Sek.`;
-} else {
-  const mins = Math.round(totalMinutes);
+    if (totalSeconds < 1) {
+      time = `${Math.round(totalMs)} ms`;
+    } else if (totalSeconds < 60) {
+      time = `${Math.round(totalSeconds)} Sek.`;
+    } else {
+      const mins = Math.round(totalMinutes);
 
-  time =
-    mins >= 60
-      ? `${Math.floor(mins / 60)}h ${mins % 60} Min`
-      : `${mins} Min`;
-}
+      time =
+        mins >= 60
+          ? `${Math.floor(mins / 60)}h ${mins % 60} Min`
+          : `${mins} Min`;
+    }
 
     const pct = Math.round(
-      (u.total_time_ms / max) * 100
+      (totalMs / max) * 100
     );
 
     const first = fmt(u.first_time_used);
-const last = fmt(u.last_used);
+    const last = fmt(u.last_used);
 
-let times = "";
+    let times = "";
 
-if (first && last) {
-  const lastDate = new Date(u.last_used);
-  const lastHour = lastDate.getHours();
-  const lastMinute = lastDate.getMinutes();
+    if (first && last) {
+      times = `
+        <div style="color:#94a3b8;font-size:11px;margin-top:2px">
+          🕐 ${first} – ${last} Uhr
+        </div>
+      `;
+    }
 
-  // 00:00 bedeutet: Session wurde am Tagesende künstlich begrenzt.
-  if (lastHour === 0 && lastMinute === 0) {
-    times = `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
-      🕐 ${first} – bis Tagesende
-    </div>`;
-  } else {
-    times = `<div style="color:#94a3b8;font-size:11px;margin-top:2px">
-      🕐 ${first} – ${last} Uhr
-    </div>`;
-  }
-}
+    return `
+      <div class="report-item">
+        <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+          <span>${u.app_name || u.app_package}</span>
+          <span style="color:#64748b;font-size:13px">${time}</span>
+        </div>
 
-    return `<div class="report-item">
-      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
-        <span>${u.app_name || u.app_package}</span>
-        <span style="color:#64748b;font-size:13px">${time}</span>
+        ${times}
+
+        <div style="background:#f1f5f9;border-radius:4px;height:6px;margin-top:4px">
+          <div
+            style="
+              background:#2563eb;
+              border-radius:4px;
+              height:6px;
+              width:${pct}%
+            "
+          ></div>
+        </div>
       </div>
-
-      ${times}
-
-      <div style="background:#f1f5f9;border-radius:4px;height:6px;margin-top:4px">
-        <div style="background:#2563eb;border-radius:4px;height:6px;width:${pct}%"></div>
-      </div>
-    </div>`;
+    `;
   }).join("");
 }
+
 
 
     // ── Tagesberichte ────────────────────────────────────────────────────────

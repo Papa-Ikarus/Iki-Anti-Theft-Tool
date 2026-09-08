@@ -31,7 +31,7 @@ class UsageStatsCapture(private val context: Context) {
             val now = System.currentTimeMillis()
 
             // -------------------------------------------------------------
-            // 1. Echten gestrigen Kalendertag bestimmen
+            // 1. Heutigen Kalendertag bestimmen
             // -------------------------------------------------------------
 
             val startCalendar = Calendar.getInstance().apply {
@@ -40,17 +40,10 @@ class UsageStatsCapture(private val context: Context) {
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
-                add(Calendar.DAY_OF_YEAR, -1)
             }
 
             val since = startCalendar.timeInMillis
-
-            val endCalendar = Calendar.getInstance().apply {
-                timeInMillis = since
-                add(Calendar.DAY_OF_YEAR, 1)
-            }
-
-            val endOfDay = endCalendar.timeInMillis
+            val endOfDay = now
 
             Log.d(
                 TAG,
@@ -74,225 +67,227 @@ class UsageStatsCapture(private val context: Context) {
             )
 
             // -------------------------------------------------------------
-// 3. Foreground-Sessions aus UsageEvents ermitteln
-// -------------------------------------------------------------
+            // 3. Foreground-Sessions aus UsageEvents ermitteln
+            // -------------------------------------------------------------
 
-val firstUsage = mutableMapOf<String, Long>()
-val lastUsage = mutableMapOf<String, Long>()
-val activeSince = mutableMapOf<String, Long>()
-val totalUsage = mutableMapOf<String, Long>()
+            val firstUsage = mutableMapOf<String, Long>()
+            val lastUsage = mutableMapOf<String, Long>()
+            val activeSince = mutableMapOf<String, Long>()
+            val totalUsage = mutableMapOf<String, Long>()
 
-val usageEvents =
-    usageManager.queryEvents(since, endOfDay)
+            val usageEvents =
+                usageManager.queryEvents(since, endOfDay)
 
-val event = UsageEvents.Event()
+            val event = UsageEvents.Event()
 
-while (usageEvents.hasNextEvent()) {
+            while (usageEvents.hasNextEvent()) {
 
-    usageEvents.getNextEvent(event)
+                usageEvents.getNextEvent(event)
 
-    val packageName =
-        event.packageName ?: continue
+                val packageName =
+                    event.packageName ?: continue
 
-    if (packageName in IGNORED_PACKAGES) {
-        continue
-    }
-
-    val timestamp = event.timeStamp
-
-    // Nur Events innerhalb des gestrigen Tages akzeptieren.
-    if (timestamp < since || timestamp >= endOfDay) {
-        continue
-    }
-
-    when (event.eventType) {
-
-        // -----------------------------------------------------
-        // App kommt in den Vordergrund
-        // -----------------------------------------------------
-
-        UsageEvents.Event.MOVE_TO_FOREGROUND,
-        UsageEvents.Event.ACTIVITY_RESUMED -> {
-
-            if (!activeSince.containsKey(packageName)) {
-
-                activeSince[packageName] = timestamp
-
-                if (!firstUsage.containsKey(packageName)) {
-                    firstUsage[packageName] = timestamp
+                if (packageName in IGNORED_PACKAGES) {
+                    continue
                 }
 
-                Log.d(
-                    TAG,
-                    "SESSION START | " +
-                        "package=$packageName | " +
-                        "timestamp=$timestamp"
-                )
+                val timestamp = event.timeStamp
+
+                // Nur Events innerhalb des heutigen Zeitraums akzeptieren.
+                if (timestamp < since || timestamp >= endOfDay) {
+                    continue
+                }
+
+                when (event.eventType) {
+
+                    // -----------------------------------------------------
+                    // App kommt in den Vordergrund
+                    // -----------------------------------------------------
+
+                    UsageEvents.Event.MOVE_TO_FOREGROUND,
+                    UsageEvents.Event.ACTIVITY_RESUMED -> {
+
+                        if (!activeSince.containsKey(packageName)) {
+
+                            activeSince[packageName] = timestamp
+
+                            if (!firstUsage.containsKey(packageName)) {
+                                firstUsage[packageName] = timestamp
+                            }
+
+                            Log.d(
+                                TAG,
+                                "SESSION START | " +
+                                    "package=$packageName | " +
+                                    "timestamp=$timestamp"
+                            )
+                        }
+                    }
+
+                    // -----------------------------------------------------
+                    // App geht in den Hintergrund
+                    // -----------------------------------------------------
+
+                    UsageEvents.Event.MOVE_TO_BACKGROUND,
+                    UsageEvents.Event.ACTIVITY_PAUSED,
+                    UsageEvents.Event.ACTIVITY_STOPPED -> {
+
+                        val sessionStart =
+                            activeSince.remove(packageName)
+
+                        if (sessionStart != null) {
+
+                            val sessionEnd =
+                                timestamp.coerceAtMost(endOfDay)
+
+                            val duration =
+                                (sessionEnd - sessionStart)
+                                    .coerceAtLeast(0L)
+
+                            totalUsage[packageName] =
+                                (totalUsage[packageName] ?: 0L) +
+                                    duration
+
+                            lastUsage[packageName] = sessionEnd
+
+                            Log.d(
+                                TAG,
+                                "SESSION END | " +
+                                    "package=$packageName | " +
+                                    "start=$sessionStart | " +
+                                    "end=$sessionEnd | " +
+                                    "duration=${duration}ms"
+                            )
+                        }
+                    }
+                }
             }
-        }
 
-        // -----------------------------------------------------
-        // App geht in den Hintergrund
-        // -----------------------------------------------------
+            // -------------------------------------------------------------
+            // 4. Apps, die aktuell noch aktiv sind
+            // -------------------------------------------------------------
 
-        UsageEvents.Event.MOVE_TO_BACKGROUND,
-        UsageEvents.Event.ACTIVITY_PAUSED,
-        UsageEvents.Event.ACTIVITY_STOPPED -> {
+            for ((packageName, sessionStart) in activeSince) {
 
-            val sessionStart =
-                activeSince.remove(packageName)
-
-            if (sessionStart != null) {
-
-                val sessionEnd =
-                    timestamp.coerceAtMost(endOfDay)
+                val sessionEnd = endOfDay
 
                 val duration =
-                    (sessionEnd - sessionStart).coerceAtLeast(0L)
+                    (sessionEnd - sessionStart)
+                        .coerceAtLeast(0L)
 
                 totalUsage[packageName] =
-                    (totalUsage[packageName] ?: 0L) + duration
+                    (totalUsage[packageName] ?: 0L) +
+                        duration
 
                 lastUsage[packageName] = sessionEnd
 
                 Log.d(
                     TAG,
-                    "SESSION END | " +
+                    "SESSION END (CURRENT) | " +
                         "package=$packageName | " +
                         "start=$sessionStart | " +
                         "end=$sessionEnd | " +
                         "duration=${duration}ms"
                 )
             }
-        }
-    }
-}
 
-// -------------------------------------------------------------
-// 4. Apps, die am Ende des Tages noch aktiv waren
-// -------------------------------------------------------------
+            // -------------------------------------------------------------
+            // 5. Daten aggregieren
+            // -------------------------------------------------------------
 
-for ((packageName, sessionStart) in activeSince) {
+            val relevant = totalUsage
+                .filter { (_, totalTime) ->
+                    totalTime > 0L
+                }
+                .filter { (packageName, _) ->
+                    packageName !in IGNORED_PACKAGES
+                }
+                .map { (packageName, totalTime) ->
 
-    val sessionEnd = endOfDay
+                    val firstTime =
+                        firstUsage[packageName] ?: 0L
 
-    val duration =
-        (sessionEnd - sessionStart).coerceAtLeast(0L)
+                    val lastTime =
+                        lastUsage[packageName] ?: 0L
 
-    totalUsage[packageName] =
-        (totalUsage[packageName] ?: 0L) + duration
+                    Triple(
+                        packageName,
+                        totalTime,
+                        Pair(firstTime, lastTime)
+                    )
+                }
+                .sortedByDescending {
+                    it.second
+                }
+                .take(30)
 
-    lastUsage[packageName] = sessionEnd
+            // -------------------------------------------------------------
+            // 6. Upload vorbereiten
+            // -------------------------------------------------------------
 
-    Log.d(
-        TAG,
-        "SESSION END (DAY LIMIT) | " +
-            "package=$packageName | " +
-            "start=$sessionStart | " +
-            "end=$sessionEnd | " +
-            "duration=${duration}ms"
-    )
-}
+            val deviceId =
+                com.ikianti.app.DeviceManager.getDeviceId(context)
 
-// -------------------------------------------------------------
-// 5. Daten aggregieren
-// -------------------------------------------------------------
+            val jsonArray = JSONArray()
 
-val relevant = totalUsage
-    .filter { (_, totalTime) ->
-        totalTime > 0L
-    }
-    .filter { (packageName, _) ->
-        packageName !in IGNORED_PACKAGES
-    }
-    .map { (packageName, totalTime) ->
+            for ((packageName, totalTime, times) in relevant) {
 
-        val firstTime =
-            firstUsage[packageName] ?: 0L
+                val firstTime = times.first
+                val lastTime = times.second
 
-        val lastTime =
-            lastUsage[packageName] ?: 0L
+                Log.d(
+                    TAG,
+                    "APP | $packageName | " +
+                        "total=${totalTime}ms | " +
+                        "first=$firstTime | " +
+                        "last=$lastTime"
+                )
 
-        Triple(
-            packageName,
-            totalTime,
-            Pair(firstTime, lastTime)
-        )
-    }
-    .sortedByDescending {
-        it.second
-    }
-    .take(30)
+                val appName =
+                    getAppName(packageName)
 
-// -------------------------------------------------------------
-// 6. Upload vorbereiten
-// -------------------------------------------------------------
+                val json = JSONObject().apply {
 
-val deviceId =
-    com.ikianti.app.DeviceManager.getDeviceId(context)
+                    put("device_id", deviceId)
 
-val jsonArray = JSONArray()
+                    put("date", dateString)
 
-for ((packageName, totalTime, times) in relevant) {
+                    put("app_package", packageName)
 
-    val firstTime = times.first
-    val lastTime = times.second
+                    put("app_name", appName)
 
-    Log.d(
-        TAG,
-        "APP | $packageName | " +
-            "total=${totalTime}ms | " +
-            "first=$firstTime | " +
-            "last=$lastTime"
-    )
+                    put(
+                        "total_time_ms",
+                        totalTime
+                    )
 
-    val appName =
-        getAppName(packageName)
+                    if (firstTime > 0L) {
+                        put(
+                            "first_time_used",
+                            firstTime
+                        )
+                    } else {
+                        put(
+                            "first_time_used",
+                            JSONObject.NULL
+                        )
+                    }
 
-    val json = JSONObject().apply {
+                    if (lastTime > 0L) {
+                        put(
+                            "last_used",
+                            lastTime
+                        )
+                    } else {
+                        put(
+                            "last_used",
+                            JSONObject.NULL
+                        )
+                    }
+                }
 
-        put("device_id", deviceId)
-
-        put("date", dateString)
-
-        put("app_package", packageName)
-
-        put("app_name", appName)
-
-        put(
-            "total_time_ms",
-            totalTime
-        )
-
-        if (firstTime > 0L) {
-            put(
-                "first_time_used",
-                firstTime
-            )
-        } else {
-            put(
-                "first_time_used",
-                JSONObject.NULL
-            )
-        }
-
-        if (lastTime > 0L) {
-            put(
-                "last_used",
-                lastTime
-            )
-        } else {
-            put(
-                "last_used",
-                JSONObject.NULL
-            )
-        }
-    }
-
-    jsonArray.put(json)
-}
-
-            
+                jsonArray.put(json)
+            }
 
             // -------------------------------------------------------------
             // 7. Keine Daten
