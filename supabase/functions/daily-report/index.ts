@@ -1,11 +1,23 @@
 // Supabase Edge Function: daily-report
 //
 // Wird täglich via cron-job.org aufgerufen.
-// Verarbeitet alle registrierten Geräte aus der Tabelle "devices".
-// Für jedes Gerät werden die Standortdaten der letzten 24 Stunden
-// ausgewertet, ein Report gespeichert und das Dashboard per FCM informiert.
+//
+// Erstellt für jedes registrierte Gerät einen Tagesbericht
+// für den VORHERIGEN Kalendertag in Europe/Berlin.
+//
+// Beispiel:
+// Cron: 09.09.2026 03:00 Europe/Berlin
+// Report: 08.09.2026
+//
+// Verarbeitet:
+// - Locations des vorherigen Kalendertages
+// - Usage Logs mit demselben Datum
+// - speichert den Report unter demselben Datum
+// - informiert das Dashboard per FCM
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const TIME_ZONE = "Europe/Berlin";
 
 Deno.serve(async (req) => {
   // ──────────────────────────────────────────────────────────────────────────
@@ -19,20 +31,28 @@ Deno.serve(async (req) => {
     console.error("DAILY_REPORT_SECRET ist nicht konfiguriert.");
 
     return new Response(
-      JSON.stringify({ error: "Server authentication not configured" }),
+      JSON.stringify({
+        error: "Server authentication not configured",
+      }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
 
   if (authHeader !== `Bearer ${cronSecret}`) {
     return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
+      JSON.stringify({
+        error: "Unauthorized",
+      }),
       {
         status: 401,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
@@ -48,22 +68,48 @@ Deno.serve(async (req) => {
     console.error("Supabase-Konfiguration fehlt.");
 
     return new Response(
-      JSON.stringify({ error: "Supabase configuration missing" }),
+      JSON.stringify({
+        error: "Supabase configuration missing",
+      }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
 
-  const supabase = createClient(supabaseUrl, serviceKey);
+  const supabase = createClient(
+    supabaseUrl,
+    serviceKey,
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
-  // 3. Zeitraum bestimmen
+  // 3. Berichtstag bestimmen
+  //
+  // Der Daily Report gehört immer zum vorherigen Kalendertag
+  // in Europe/Berlin.
   // ──────────────────────────────────────────────────────────────────────────
 
   const now = Date.now();
-  const since = now - 24 * 60 * 60 * 1000;
+
+  const todayBerlin = getBerlinDate(now);
+  const reportDate = shiftDate(reportDateFrom(todayBerlin), -1);
+
+  const periodStart = berlinMidnightTimestamp(reportDate);
+  const periodEnd = berlinMidnightTimestamp(
+    shiftDate(reportDate, 1),
+  );
+
+  console.log(
+    `Daily Report Zeitraum: ${reportDate} | ` +
+      `${periodStart} -> ${periodEnd}`,
+  );
+
+  console.log(
+    `Daily Report Datum: ${reportDate}`,
+  );
 
   // ──────────────────────────────────────────────────────────────────────────
   // 4. Alle registrierten Geräte laden
@@ -72,10 +118,15 @@ Deno.serve(async (req) => {
   const { data: devices, error: devicesError } = await supabase
     .from("devices")
     .select("id")
-    .order("created_at", { ascending: true });
+    .order("created_at", {
+      ascending: true,
+    });
 
   if (devicesError) {
-    console.error("Fehler beim Laden der Geräte:", devicesError);
+    console.error(
+      "Fehler beim Laden der Geräte:",
+      devicesError,
+    );
 
     return new Response(
       JSON.stringify({
@@ -84,7 +135,9 @@ Deno.serve(async (req) => {
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
@@ -95,12 +148,15 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
+        report_date: reportDate,
         devices: 0,
         processed: 0,
         reports: 0,
       }),
       {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
       },
     );
   }
@@ -116,13 +172,19 @@ Deno.serve(async (req) => {
     .single();
 
   if (ownerError) {
-    console.warn("Dashboard-Owner konnte nicht geladen werden:", ownerError.message);
+    console.warn(
+      "Dashboard-Owner konnte nicht geladen werden:",
+      ownerError.message,
+    );
   }
 
-  const dashboardFcmToken = ownerData?.fcm_token ?? null;
+  const dashboardFcmToken =
+    ownerData?.fcm_token ?? null;
 
   if (!dashboardFcmToken) {
-    console.warn("Kein Dashboard-FCM-Token – Push wird übersprungen.");
+    console.warn(
+      "Kein Dashboard-FCM-Token – Push wird übersprungen.",
+    );
   }
 
   // Access Token nur einmal erzeugen und für alle Geräte wiederverwenden.
@@ -149,18 +211,24 @@ Deno.serve(async (req) => {
     const deviceId = device.id;
 
     try {
-      console.log(`Verarbeite Gerät: ${deviceId}`);
+      console.log(
+        `Verarbeite Gerät: ${deviceId} | Report-Datum: ${reportDate}`,
+      );
 
       // ──────────────────────────────────────────────────────────────────────
-      // Standortdaten der letzten 24 Stunden
+      // Standortdaten des exakten Kalendertages laden
       // ──────────────────────────────────────────────────────────────────────
 
-      const { data: locations, error: locationsError } = await supabase
-        .from("locations")
-        .select("lat, lng, timestamp")
-        .eq("device_id", deviceId)
-        .gte("timestamp", since)
-        .order("timestamp", { ascending: true });
+      const { data: locations, error: locationsError } =
+        await supabase
+          .from("locations")
+          .select("lat, lng, timestamp")
+          .eq("device_id", deviceId)
+          .gte("timestamp", periodStart)
+          .lt("timestamp", periodEnd)
+          .order("timestamp", {
+            ascending: true,
+          });
 
       if (locationsError) {
         throw new Error(
@@ -169,11 +237,18 @@ Deno.serve(async (req) => {
       }
 
       const count = locations?.length ?? 0;
+
       totalLocations += count;
 
-      let title = `📍 Tagesbericht – ${deviceId}`;
-      let body = "Heute keine Standortdaten empfangen.";
+      let title =
+        `📍 Tagesbericht – ${deviceId}`;
+
+      let body =
+        `Für ${formatGermanDate(reportDate)} ` +
+        `wurden keine Standortdaten empfangen.`;
+
       let mapsUrl: string | null = null;
+
       let reportCreated = false;
       let pushSent = false;
 
@@ -183,37 +258,45 @@ Deno.serve(async (req) => {
 
       if (count > 0) {
         const first = locations![0];
-        const last = locations![locations!.length - 1];
+        const last =
+          locations![locations!.length - 1];
 
         const fmt = (ts: number) =>
           new Date(ts).toLocaleTimeString("de-DE", {
             hour: "2-digit",
             minute: "2-digit",
-            timeZone: "Europe/Berlin",
+            timeZone: TIME_ZONE,
           });
 
         mapsUrl = buildMapsUrl(locations!);
 
-        title = `📍 Tagesbericht – ${deviceId} – ${count} Standorte`;
+        title =
+          `📍 Tagesbericht – ${deviceId} – ${count} Standorte`;
+
         body =
-          `Erster: ${fmt(first.timestamp)} · Letzter: ${fmt(last.timestamp)} Uhr`;
+          `Erster: ${fmt(first.timestamp)} · ` +
+          `Letzter: ${fmt(last.timestamp)} Uhr`;
 
         // ────────────────────────────────────────────────────────────────────
         // Top-App-Nutzung laden
+        //
+        // Wichtig:
+        // Das Datum kommt NICHT mehr aus dem ersten Location-Eintrag.
+        // Es ist exakt dasselbe reportDate wie für den Report.
         // ────────────────────────────────────────────────────────────────────
 
-        const reportDate = new Date(first.timestamp)
-          .toLocaleDateString("en-CA", {
-            timeZone: "Europe/Berlin",
-          });
-
-        const { data: usageData, error: usageError } = await supabase
-          .from("usage_logs")
-          .select("app_name, app_package, total_time_ms")
-          .eq("device_id", deviceId)
-          .eq("date", reportDate)
-          .order("total_time_ms", { ascending: false })
-          .limit(5);
+        const { data: usageData, error: usageError } =
+          await supabase
+            .from("usage_logs")
+            .select(
+              "app_name, app_package, total_time_ms",
+            )
+            .eq("device_id", deviceId)
+            .eq("date", reportDate)
+            .order("total_time_ms", {
+              ascending: false,
+            })
+            .limit(5);
 
         if (usageError) {
           console.warn(
@@ -222,12 +305,22 @@ Deno.serve(async (req) => {
           );
         }
 
-        const topApps = usageData
-          ?.map((u) => {
-            const mins = Math.round(u.total_time_ms / 60000);
-            return `${u.app_name || u.app_package} ${mins}Min`;
-          })
-          .join(" · ") ?? "";
+
+const topApps =
+  usageData
+    ?.map((u: {
+      app_name: string | null;
+      app_package: string | null;
+      total_time_ms: number | string | null;
+    }) => {
+      const mins = Math.round(
+        Number(u.total_time_ms ?? 0) / 60000,
+      );
+
+      return `${u.app_name || u.app_package} ${mins}Min`;
+    })
+    .join(" · ") ?? "";
+
 
         if (topApps) {
           body += `\n📱 ${topApps}`;
@@ -235,33 +328,30 @@ Deno.serve(async (req) => {
 
         // ────────────────────────────────────────────────────────────────────
         // Report speichern
+        //
+        // Report-Datum = Usage-Datum = Kalendertag.
         // ────────────────────────────────────────────────────────────────────
 
-        const reportDateForDb = new Date()
-          .toLocaleDateString("en-CA", {
-            timeZone: "Europe/Berlin",
-          });
-
-        const { error: reportError } = await supabase
-         .from("reports")
-         .upsert(
-           {
-             date: reportDateForDb,
-             device_id: deviceId,
-             location_count: count,
-             first_timestamp: first.timestamp,
-             last_timestamp: last.timestamp,
-             first_lat: first.lat,
-             first_lng: first.lng,
-             last_lat: last.lat,
-             last_lng: last.lng,
-             maps_url: mapsUrl,
-           },
-           {
-             onConflict: "date,device_id",
-           },
-         );
-         
+        const { error: reportError } =
+          await supabase
+            .from("reports")
+            .upsert(
+              {
+                date: reportDate,
+                device_id: deviceId,
+                location_count: count,
+                first_timestamp: first.timestamp,
+                last_timestamp: last.timestamp,
+                first_lat: first.lat,
+                first_lng: first.lng,
+                last_lat: last.lat,
+                last_lng: last.lng,
+                maps_url: mapsUrl,
+              },
+              {
+                onConflict: "date,device_id",
+              },
+            );
 
         if (reportError) {
           throw new Error(
@@ -281,10 +371,13 @@ Deno.serve(async (req) => {
         try {
           if (!fcmAccessToken && !fcmTokenError) {
             try {
-              fcmAccessToken = await getFcmAccessToken();
+              fcmAccessToken =
+                await getFcmAccessToken();
             } catch (err) {
               fcmTokenError =
-                err instanceof Error ? err.message : String(err);
+                err instanceof Error
+                  ? err.message
+                  : String(err);
 
               console.error(
                 "FCM Access Token konnte nicht erstellt werden:",
@@ -294,10 +387,13 @@ Deno.serve(async (req) => {
           }
 
           if (fcmAccessToken) {
-            const projectId = Deno.env.get("FIREBASE_PROJECT_ID");
+            const projectId =
+              Deno.env.get("FIREBASE_PROJECT_ID");
 
             if (!projectId) {
-              throw new Error("FIREBASE_PROJECT_ID ist nicht konfiguriert.");
+              throw new Error(
+                "FIREBASE_PROJECT_ID ist nicht konfiguriert.",
+              );
             }
 
             const fcmResponse = await fetch(
@@ -305,24 +401,31 @@ Deno.serve(async (req) => {
               {
                 method: "POST",
                 headers: {
-                  Authorization: `Bearer ${fcmAccessToken}`,
-                  "Content-Type": "application/json",
+                  Authorization:
+                    `Bearer ${fcmAccessToken}`,
+                  "Content-Type":
+                    "application/json",
                 },
                 body: JSON.stringify({
                   message: {
                     token: dashboardFcmToken,
+
                     notification: {
                       title,
                       body,
                     },
+
                     webpush: {
                       notification: {
                         title,
                         body,
                         requireInteraction: true,
                       },
+
                       fcm_options: mapsUrl
-                        ? { link: mapsUrl }
+                        ? {
+                            link: mapsUrl,
+                          }
                         : {},
                     },
                   },
@@ -331,7 +434,8 @@ Deno.serve(async (req) => {
             );
 
             if (!fcmResponse.ok) {
-              const fcmErrorText = await fcmResponse.text();
+              const fcmErrorText =
+                await fcmResponse.text();
 
               throw new Error(
                 `FCM HTTP ${fcmResponse.status}: ${fcmErrorText}`,
@@ -339,12 +443,17 @@ Deno.serve(async (req) => {
             }
 
             pushSent = true;
-            console.log(`FCM Push für ${deviceId} erfolgreich gesendet.`);
+
+            console.log(
+              `FCM Push für ${deviceId} erfolgreich gesendet.`,
+            );
           }
         } catch (err) {
           console.error(
             `FCM-Fehler für ${deviceId}:`,
-            err instanceof Error ? err.message : err,
+            err instanceof Error
+              ? err.message
+              : err,
           );
         }
       }
@@ -359,12 +468,21 @@ Deno.serve(async (req) => {
       });
 
       console.log(
-        `Gerät ${deviceId}: ${count} Locations, Report=${reportCreated}, Push=${pushSent}`,
+        `Gerät ${deviceId}: ` +
+          `${count} Locations, ` +
+          `Report=${reportCreated}, ` +
+          `Push=${pushSent}`,
       );
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : String(err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : String(err);
 
-      console.error(`Fehler bei Gerät ${deviceId}:`, errorMessage);
+      console.error(
+        `Fehler bei Gerät ${deviceId}:`,
+        errorMessage,
+      );
 
       results.push({
         device_id: deviceId,
@@ -374,9 +492,8 @@ Deno.serve(async (req) => {
         error: errorMessage,
       });
 
-      // Wichtig:
-      // Ein fehlerhaftes Gerät darf die Verarbeitung anderer Geräte
-      // nicht abbrechen.
+      // Ein fehlerhaftes Gerät darf die Verarbeitung
+      // anderer Geräte nicht abbrechen.
       continue;
     }
   }
@@ -388,6 +505,9 @@ Deno.serve(async (req) => {
   return new Response(
     JSON.stringify({
       success: true,
+      report_date: reportDate,
+      period_start: periodStart,
+      period_end: periodEnd,
       devices: devices.length,
       processed: processedDevices,
       reports: reportsCreated,
@@ -395,14 +515,152 @@ Deno.serve(async (req) => {
       results,
     }),
     {
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
     },
   );
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Berliner Datum YYYY-MM-DD
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getBerlinDate(timestamp: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(timestamp));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Datum um Tage verschieben
+// ─────────────────────────────────────────────────────────────────────────────
+
+function shiftDate(
+  dateString: string,
+  days: number,
+): string {
+  const [year, month, day] =
+    dateString.split("-").map(Number);
+
+  const date = new Date(
+    Date.UTC(year, month - 1, day),
+  );
+
+  date.setUTCDate(
+    date.getUTCDate() + days,
+  );
+
+  return date.toISOString().slice(0, 10);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hilfsfunktion für den Berichtstag
+// ─────────────────────────────────────────────────────────────────────────────
+
+function reportDateFrom(
+  berlinDate: string,
+): string {
+  return berlinDate;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Berliner Mitternacht als Unix-Timestamp
+//
+// Wird über Intl iterativ berechnet, damit auch Sommer-/Winterzeit
+// (CET/CEST) korrekt berücksichtigt wird.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function berlinMidnightTimestamp(
+  dateString: string,
+): number {
+  const [year, month, day] =
+    dateString.split("-").map(Number);
+
+  let timestamp = Date.UTC(
+    year,
+    month - 1,
+    day,
+    0,
+    0,
+    0,
+    0,
+  );
+
+  for (let i = 0; i < 4; i++) {
+    const parts =
+      new Intl.DateTimeFormat("en-CA", {
+        timeZone: TIME_ZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(
+        new Date(timestamp),
+      );
+
+    const values: Record<string, string> = {};
+
+    for (const part of parts) {
+      values[part.type] = part.value;
+    }
+
+    const displayedAsUtc = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute),
+      Number(values.second),
+    );
+
+    const desiredAsUtc = Date.UTC(
+      year,
+      month - 1,
+      day,
+      0,
+      0,
+      0,
+    );
+
+    timestamp +=
+      desiredAsUtc - displayedAsUtc;
+  }
+
+  return timestamp;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Deutsches Datum für Logs / Push
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatGermanDate(
+  dateString: string,
+): string {
+  const [year, month, day] =
+    dateString.split("-").map(Number);
+
+  return new Date(
+    Date.UTC(year, month - 1, day),
+  ).toLocaleDateString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Google Maps URL erzeugen
 // ─────────────────────────────────────────────────────────────────────────────
+
 
 function buildMapsUrl(
   locs: { lat: number; lng: number }[],
@@ -412,7 +670,10 @@ function buildMapsUrl(
   }
 
   // Identische aufeinanderfolgende Koordinaten entfernen.
-  const unique: { lat: number; lng: number }[] = [];
+  const unique: {
+    lat: number;
+    lng: number;
+  }[] = [];
 
   for (const loc of locs) {
     const previous = unique[unique.length - 1];
@@ -426,16 +687,29 @@ function buildMapsUrl(
     }
   }
 
+  // Nur ein Standort.
   if (unique.length === 1) {
     return `https://www.google.com/maps?q=${unique[0].lat},${unique[0].lng}`;
   }
 
+  // Bei mehreren Standorten maximal 10 Punkte verwenden.
   const max = 10;
-  const step = Math.max(1, Math.floor(unique.length / max));
 
-  const pts: { lat: number; lng: number }[] = [];
+  const step = Math.max(
+    1,
+    Math.floor(unique.length / max),
+  );
 
-  for (let i = 0; i < unique.length; i += step) {
+  const pts: {
+    lat: number;
+    lng: number;
+  }[] = [];
+
+  for (
+    let i = 0;
+    i < unique.length;
+    i += step
+  ) {
     pts.push(unique[i]);
 
     if (pts.length >= max) {
@@ -443,6 +717,7 @@ function buildMapsUrl(
     }
   }
 
+  // Letzten Standort immer als Ziel hinzufügen.
   const last = unique[unique.length - 1];
 
   const alreadyLast =
@@ -453,19 +728,27 @@ function buildMapsUrl(
     pts.push(last);
   }
 
-  const origin = `${pts[0].lat},${pts[0].lng}`;
-  const destination = `${pts[pts.length - 1].lat},${pts[pts.length - 1].lng}`;
+  const origin =
+    `${pts[0].lat},${pts[0].lng}`;
+
+  const destination =
+    `${pts[pts.length - 1].lat},${pts[pts.length - 1].lng}`;
 
   const waypoints = pts
     .slice(1, -1)
-    .map((p) => `${p.lat},${p.lng}`)
+    .map(
+      (p) => `${p.lat},${p.lng}`,
+    )
     .join("|");
 
   let url =
-    `https://www.google.com/maps/dir/${origin}/${destination}`;
+    `https://www.google.com/maps/dir/?api=1` +
+    `&origin=${encodeURIComponent(origin)}` +
+    `&destination=${encodeURIComponent(destination)}`;
 
   if (waypoints) {
-    url += `?api=1&waypoints=${encodeURIComponent(waypoints)}`;
+    url +=
+      `&waypoints=${encodeURIComponent(waypoints)}`;
   }
 
   return url;
@@ -476,14 +759,21 @@ function buildMapsUrl(
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function getFcmAccessToken(): Promise<string> {
-  const serviceAccountRaw = Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
+  const serviceAccountRaw =
+    Deno.env.get("FIREBASE_SERVICE_ACCOUNT");
 
   if (!serviceAccountRaw) {
-    throw new Error("FIREBASE_SERVICE_ACCOUNT ist nicht konfiguriert.");
+    throw new Error(
+      "FIREBASE_SERVICE_ACCOUNT ist nicht konfiguriert.",
+    );
   }
 
-  const sa = JSON.parse(serviceAccountRaw);
-  const now = Math.floor(Date.now() / 1000);
+  const sa = JSON.parse(
+    serviceAccountRaw,
+  );
+
+  const now =
+    Math.floor(Date.now() / 1000);
 
   const header = urlB64(
     JSON.stringify({
@@ -495,68 +785,88 @@ async function getFcmAccessToken(): Promise<string> {
   const payload = urlB64(
     JSON.stringify({
       iss: sa.client_email,
-      scope: "https://www.googleapis.com/auth/firebase.messaging",
-      aud: "https://oauth2.googleapis.com/token",
+      scope:
+        "https://www.googleapis.com/auth/firebase.messaging",
+      aud:
+        "https://oauth2.googleapis.com/token",
       iat: now,
       exp: now + 3600,
     }),
   );
 
-  const sigInput = `${header}.${payload}`;
+  const sigInput =
+    `${header}.${payload}`;
 
-  const privateKeyBase64 = sa.private_key
-    .replace(/-----[^-]+-----/g, "")
-    .replace(/\s/g, "");
+  const privateKeyBase64 =
+    sa.private_key
+      .replace(
+        /-----[^-]+-----/g,
+        "",
+      )
+      .replace(/\s/g, "");
 
-  const privateKeyBytes = Uint8Array.from(
-    atob(privateKeyBase64),
-    (c) => c.charCodeAt(0),
-  );
+  const privateKeyBytes =
+    Uint8Array.from(
+      atob(privateKeyBase64),
+      (c) => c.charCodeAt(0),
+    );
 
-  const key = await crypto.subtle.importKey(
-    "pkcs8",
-    privateKeyBytes,
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"],
-  );
+  const key =
+    await crypto.subtle.importKey(
+      "pkcs8",
+      privateKeyBytes,
+      {
+        name: "RSASSA-PKCS1-v1_5",
+        hash: "SHA-256",
+      },
+      false,
+      ["sign"],
+    );
 
-  const signature = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(sigInput),
-  );
+  const signature =
+    await crypto.subtle.sign(
+      "RSASSA-PKCS1-v1_5",
+      key,
+      new TextEncoder().encode(
+        sigInput,
+      ),
+    );
 
   const jwt =
-    `${sigInput}.${urlB64Bytes(new Uint8Array(signature))}`;
+    `${sigInput}.${urlB64Bytes(
+      new Uint8Array(signature),
+    )}`;
 
-  const response = await fetch(
-    "https://oauth2.googleapis.com/token",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+  const response =
+    await fetch(
+      "https://oauth2.googleapis.com/token",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/x-www-form-urlencoded",
+        },
+        body:
+          `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
       },
-      body:
-        `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-    },
-  );
+    );
 
   if (!response.ok) {
-    const errorText = await response.text();
+    const errorText =
+      await response.text();
 
     throw new Error(
       `Google OAuth HTTP ${response.status}: ${errorText}`,
     );
   }
 
-  const tokenData = await response.json();
+  const tokenData =
+    await response.json();
 
   if (!tokenData.access_token) {
-    throw new Error("Google OAuth lieferte kein access_token.");
+    throw new Error(
+      "Google OAuth lieferte kein access_token.",
+    );
   }
 
   return tokenData.access_token;
@@ -566,13 +876,17 @@ async function getFcmAccessToken(): Promise<string> {
 // Base64 URL Encoding
 // ─────────────────────────────────────────────────────────────────────────────
 
-function urlB64(s: string): string {
+function urlB64(
+  s: string,
+): string {
   return urlB64Bytes(
     new TextEncoder().encode(s),
   );
 }
 
-function urlB64Bytes(b: Uint8Array): string {
+function urlB64Bytes(
+  b: Uint8Array,
+): string {
   return btoa(
     String.fromCharCode(...b),
   )

@@ -156,18 +156,189 @@
       init();
     };
 
-    async function init() {
-      if (Notification.permission !== "granted") document.getElementById("push-banner").style.display = "block";
-      if ("serviceWorker" in navigator) navigator.serviceWorker.register("/firebase-messaging-sw.js");
+    
+async function init() {
+  try {
+    // ── Firebase Messaging Service Worker ──────────────────────────────
+    if ("serviceWorker" in navigator) {
+      console.log("🔧 Registriere Firebase Messaging Service Worker...");
 
-      initMap();
-      await loadDevices();
-      subscribeLocationUpdates();
+      const swRegistration = await navigator.serviceWorker.register(
+        "/firebase-messaging-sw.js",
+        {
+          scope: "/"
+        }
+      );
 
-      onMessage(messaging, payload => {
-        document.getElementById("status").textContent = `🔔 ${payload.notification.title}: ${payload.notification.body}`;
+      console.log("✅ Service Worker registriert:", {
+        scope: swRegistration.scope,
+        scriptURL: swRegistration.active?.scriptURL,
+        state: swRegistration.active?.state
       });
+
+      await navigator.serviceWorker.ready;
+
+      console.log("✅ Service Worker ist bereit");
     }
+
+    // ── Push-Banner ────────────────────────────────────────────────────
+    if (Notification.permission !== "granted") {
+      document.getElementById("push-banner").style.display = "block";
+    }
+
+    // ── Dashboard ──────────────────────────────────────────────────────
+    initMap();
+    await loadDevices();
+    subscribeLocationUpdates();
+
+    // ── Foreground Firebase Messages ───────────────────────────────────
+    onMessage(messaging, payload => {
+      console.log("🔔 FCM Nachricht empfangen:", payload);
+
+      const title =
+        payload.notification?.title ||
+        payload.data?.title ||
+        "Iki Anti Theft";
+
+      const body =
+        payload.notification?.body ||
+        payload.data?.body ||
+        "";
+
+      document.getElementById("status").textContent =
+        `🔔 ${title}: ${body}`;
+    });
+
+  } catch (err) {
+    console.error("❌ Dashboard-Initialisierung fehlgeschlagen:", err);
+
+    document.getElementById("status").textContent =
+      `❌ Initialisierung fehlgeschlagen: ${err.message}`;
+  }
+}
+
+
+// ── Web-Push / Firebase Cloud Messaging ────────────────────────────────
+window.registerWebPush = async function () {
+  try {
+    console.log("🔔 Starte Web-Push-Registrierung...");
+
+    // 1. Notification Permission prüfen
+    if (Notification.permission !== "granted") {
+      console.log("🔔 Fordere Notification-Berechtigung an...");
+
+      const permission = await Notification.requestPermission();
+
+      console.log("Notification Permission:", permission);
+
+      if (permission !== "granted") {
+        throw new Error(
+          "Benachrichtigungsberechtigung wurde nicht erteilt."
+        );
+      }
+    }
+
+    // 2. Firebase Messaging Service Worker holen
+    console.log("🔧 Suche Firebase Messaging Service Worker...");
+
+    const swRegistration =
+      await navigator.serviceWorker.getRegistration("/");
+
+    if (!swRegistration) {
+      throw new Error(
+        "Firebase Messaging Service Worker wurde nicht gefunden."
+      );
+    }
+
+    console.log("✅ Verwende Service Worker:", {
+      scope: swRegistration.scope,
+      scriptURL: swRegistration.active?.scriptURL,
+      state: swRegistration.active?.state
+    });
+
+    // 3. Service Worker muss aktiv sein
+    await navigator.serviceWorker.ready;
+
+    console.log("✅ Service Worker ready");
+
+    // 4. Vorhandene Push-Subscription prüfen
+    const existingSubscription =
+      await swRegistration.pushManager.getSubscription();
+
+    console.log(
+      "Bestehende Push-Subscription:",
+      existingSubscription
+    );
+
+    // 5. FCM Token holen
+    console.log("🔑 Fordere FCM Token an...");
+
+    const token = await getToken(messaging, {
+      vapidKey: VAPID_KEY,
+      serviceWorkerRegistration: swRegistration
+    });
+
+    console.log("✅ getToken() erfolgreich");
+    console.log("FCM Token vorhanden:", !!token);
+    console.log("FCM Token Länge:", token?.length);
+
+    if (!token) {
+      throw new Error(
+        "Firebase hat keinen FCM Token zurückgegeben."
+      );
+    }
+
+    // 6. Token in Supabase speichern
+    console.log("💾 Speichere FCM Token in owner...");
+
+    const { data, error } = await supabase
+      .from("owner")
+      .upsert({
+        id: "dashboard",
+        fcm_token: token,
+        registered_at: Date.now()
+      })
+      .select();
+
+    console.log("Owner-Upsert:", {
+      data,
+      error
+    });
+
+    if (error) {
+      throw new Error(
+        `Owner-Upsert fehlgeschlagen: ${error.message}`
+      );
+    }
+
+    // 7. Push-Banner ausblenden
+    document.getElementById("push-banner").style.display = "none";
+
+    document.getElementById("status").textContent =
+      "✅ Push aktiviert.";
+
+    console.log("🎉 Web-Push erfolgreich aktiviert!");
+
+  } catch (err) {
+    console.error(
+      "❌ Web-Push-Registrierung fehlgeschlagen:",
+      err
+    );
+
+    console.error("Push-Debug:", {
+      notificationPermission: Notification.permission,
+      vapidKeyPresent: !!VAPID_KEY,
+      vapidKeyLength: VAPID_KEY?.length,
+      firebaseProjectId: FIREBASE_CONFIG.projectId,
+      firebaseMessagingSenderId: FIREBASE_CONFIG.messagingSenderId
+    });
+
+    document.getElementById("status").textContent =
+      `❌ ${err.name || "Fehler"}: ${err.message}`;
+  }
+};
+
+
 window.refreshDashboard = async function () {
   if (!authToken || !selectedDevice) return;
 
@@ -333,17 +504,7 @@ window.refreshDashboard = async function () {
       }
     };
 
-    // ── Web-Push ────────────────────────────────────────────────────────────
-    window.registerWebPush = async function () {
-      try {
-        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
-        await supabase.from("owner").upsert({ id: "dashboard", fcm_token: token, registered_at: Date.now() });
-        document.getElementById("push-banner").style.display = "none";
-        document.getElementById("status").textContent = "✅ Push aktiviert.";
-      } catch (err) {
-        document.getElementById("status").textContent = `❌ ${err.message}`;
-      }
-    };
+    
 window.refreshDashboard = async function () {
   if (!authToken || !selectedDevice) {
     document.getElementById("status").textContent =
