@@ -18,18 +18,24 @@ import java.io.IOException
  */
 object SupabaseApi {
 
-    // TODO: eigene Werte eintragen
-    private const val SUPABASE_URL      = "https://ywrhhuhadgtmdzldbawa.supabase.co"
-    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmhodWhhZGd0bWR6bGRiYXdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTc4NzQsImV4cCI6MjEwMDc3Mzg3NH0.0NjDWhRSbnUjWbH7NJ7mn9EoG8CPf9-8Ot79SguDyoU"
+    private const val SUPABASE_URL =
+        "https://ywrhhuhadgtmdzldbawa.supabase.co"
+
+    private const val SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3cmhodWhhZGd0bWR6bGRiYXdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUxOTc4NzQsImV4cCI6MjEwMDc3Mzg3NH0.0NjDWhRSbnUjWbH7NJ7mn9EoG8CPf9-8Ot79SguDyoU"
 
     private const val TAG = "SupabaseApi"
 
     private val client = OkHttpClient()
-    private val JSON_MEDIA  = "application/json".toMediaType()
+    private val JSON_MEDIA = "application/json".toMediaType()
 
     // ── Gerät registrieren / Token aktualisieren ──────────────────────────────
 
-    fun upsertDevice(deviceId: String, fcmToken: String, onDone: () -> Unit) {
+    fun upsertDevice(
+        deviceId: String,
+        fcmToken: String,
+        onDone: () -> Unit
+    ) {
         val body = JSONObject().apply {
             put("id", deviceId)
             put("fcm_token", fcmToken)
@@ -39,29 +45,39 @@ object SupabaseApi {
         val request = Request.Builder()
             .url("$SUPABASE_URL/rest/v1/devices")
             .headers(anonHeaders())
-            .header("Prefer", "resolution=merge-duplicates")   // upsert
+            .header("Prefer", "resolution=merge-duplicates")
             .post(body.toRequestBody(JSON_MEDIA))
             .build()
 
         client.newCall(request).enqueue(object : Callback {
+
             override fun onFailure(call: Call, e: IOException) {
                 Log.e(TAG, "upsertDevice Netzwerk-Fehler", e)
                 onDone()
             }
+
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string()
+
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "upsertDevice HTTP-Fehler ${response.code}: $body")
+                    Log.e(
+                        TAG,
+                        "upsertDevice HTTP-Fehler ${response.code}: $body"
+                    )
                 } else {
                     Log.d(TAG, "upsertDevice OK ${response.code}")
                 }
+
                 response.close()
                 onDone()
             }
         })
     }
 
-    fun updateFcmToken(deviceId: String, fcmToken: String) {
+    fun updateFcmToken(
+        deviceId: String,
+        fcmToken: String
+    ) {
         val body = JSONObject().apply {
             put("fcm_token", fcmToken)
             put("last_seen", System.currentTimeMillis())
@@ -74,10 +90,46 @@ object SupabaseApi {
             .build()
 
         client.newCall(request).enqueue(object : Callback {
+
             override fun onFailure(call: Call, e: IOException) {
                 Log.e(TAG, "updateFcmToken fehlgeschlagen", e)
             }
+
             override fun onResponse(call: Call, response: Response) {
+                response.close()
+            }
+        })
+    }
+
+    // ── Live-Status ───────────────────────────────────────────────────────────
+
+    fun updateLastSeen(deviceId: String) {
+        val body = JSONObject().apply {
+            put("last_seen", System.currentTimeMillis())
+        }.toString()
+
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/rest/v1/devices?id=eq.$deviceId")
+            .headers(anonHeaders())
+            .patch(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "updateLastSeen fehlgeschlagen", e)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    Log.e(
+                        TAG,
+                        "updateLastSeen HTTP-Fehler ${response.code}"
+                    )
+                } else {
+                    Log.d(TAG, "updateLastSeen OK")
+                }
+
                 response.close()
             }
         })
@@ -106,12 +158,30 @@ object SupabaseApi {
             .build()
 
         client.newCall(request).enqueue(object : Callback {
+
             override fun onFailure(call: Call, e: IOException) {
                 Log.e(TAG, "insertLocation fehlgeschlagen", e)
                 onDone()
             }
+
             override fun onResponse(call: Call, response: Response) {
+                val success = response.isSuccessful
+
+                if (!success) {
+                    Log.e(
+                        TAG,
+                        "insertLocation HTTP-Fehler ${response.code}"
+                    )
+                } else {
+                    Log.d(TAG, "insertLocation OK")
+                }
+
                 response.close()
+
+                if (success) {
+                    updateLastSeen(deviceId)
+                }
+
                 onDone()
             }
         })
@@ -133,14 +203,25 @@ object SupabaseApi {
             .build()
 
         client.newCall(request).enqueue(object : Callback {
+
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "uploadFile ($bucket/$path) fehlgeschlagen", e)
+                Log.e(
+                    TAG,
+                    "uploadFile ($bucket/$path) fehlgeschlagen",
+                    e
+                )
                 onDone()
             }
+
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    Log.e(TAG, "Upload-Fehler ${response.code}: ${response.body?.string()}")
+                    Log.e(
+                        TAG,
+                        "Upload-Fehler ${response.code}: " +
+                            response.body?.string()
+                    )
                 }
+
                 response.close()
                 onDone()
             }
@@ -149,43 +230,56 @@ object SupabaseApi {
 
     // ── App-Nutzungsstatistiken hochladen (Batch) ─────────────────────────────
 
-    fun insertUsageLogs(jsonArray: String, onDone: () -> Unit) {
+    fun insertUsageLogs(
+        deviceId: String,
+        jsonArray: String,
+        onDone: () -> Unit
+    ) {
+        Log.d(TAG, "insertUsageLogs() aufgerufen")
+        Log.d(TAG, "JSON-Länge: ${jsonArray.length}")
 
-    Log.d(TAG, "insertUsageLogs() aufgerufen")
-    Log.d(TAG, "JSON-Länge: ${jsonArray.length}")
+        val request = Request.Builder()
+            .url(
+                "$SUPABASE_URL/rest/v1/usage_logs" +
+                    "?on_conflict=device_id,date,app_package"
+            )
+            .headers(anonHeaders())
+            .header("Prefer", "resolution=merge-duplicates")
+            .post(jsonArray.toRequestBody(JSON_MEDIA))
+            .build()
 
-    val request = Request.Builder()
-        .url("$SUPABASE_URL/rest/v1/usage_logs?on_conflict=device_id,date,app_package")
-        .headers(anonHeaders())
-        .header("Prefer", "resolution=merge-duplicates")
-        .post(jsonArray.toRequestBody(JSON_MEDIA))
-        .build()
+        Log.d(TAG, "Sende UsageLogs-Request an Supabase...")
 
-    Log.d(TAG, "Sende UsageLogs-Request an Supabase...")
+        client.newCall(request).enqueue(object : Callback {
 
-    client.newCall(request).enqueue(object : Callback {
-
-        override fun onFailure(call: Call, e: IOException) {
-            Log.e(TAG, "insertUsageLogs Netzwerk-Fehler", e)
-            onDone()
-        }
-
-        override fun onResponse(call: Call, response: Response) {
-
-            val responseBody = response.body?.string()
-
-            Log.d(TAG, "UsageLogs HTTP ${response.code}")
-            Log.d(TAG, "UsageLogs Response: $responseBody")
-
-            if (!response.isSuccessful) {
-                Log.e(TAG, "UsageLogs-Fehler ${response.code}: $responseBody")
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "UsageLogs Netzwerkfehler", e)
+                onDone()
             }
 
-            response.close()
-            onDone()
-        }
-    })
-}
+            override fun onResponse(call: Call, response: Response) {
+                val responseBody = response.body?.string()
+
+                Log.d(TAG, "UsageLogs HTTP ${response.code}")
+                Log.d(TAG, "UsageLogs Response: $responseBody")
+
+                val success = response.isSuccessful
+
+                if (!success) {
+                    Log.e(
+                        TAG,
+                        "UsageLogs-Fehler ${response.code}: $responseBody"
+                    )
+                } else {
+                    Log.d(TAG, "UsageLogs OK")
+                    updateLastSeen(deviceId)
+                }
+
+                response.close()
+                onDone()
+            }
+        })
+    }
 
     // ── Header-Helper ─────────────────────────────────────────────────────────
 

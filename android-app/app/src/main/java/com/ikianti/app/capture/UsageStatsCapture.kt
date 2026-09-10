@@ -249,23 +249,13 @@ class UsageStatsCapture(private val context: Context) {
                 val json = JSONObject().apply {
 
                     put("device_id", deviceId)
-
                     put("date", dateString)
-
                     put("app_package", packageName)
-
                     put("app_name", appName)
-
-                    put(
-                        "total_time_ms",
-                        totalTime
-                    )
+                    put("total_time_ms", totalTime)
 
                     if (firstTime > 0L) {
-                        put(
-                            "first_time_used",
-                            firstTime
-                        )
+                        put("first_time_used", firstTime)
                     } else {
                         put(
                             "first_time_used",
@@ -274,10 +264,7 @@ class UsageStatsCapture(private val context: Context) {
                     }
 
                     if (lastTime > 0L) {
-                        put(
-                            "last_used",
-                            lastTime
-                        )
+                        put("last_used", lastTime)
                     } else {
                         put(
                             "last_used",
@@ -315,6 +302,7 @@ class UsageStatsCapture(private val context: Context) {
             // -------------------------------------------------------------
 
             SupabaseApi.insertUsageLogs(
+                deviceId,
                 jsonArray.toString(),
                 onDone
             )
@@ -331,10 +319,11 @@ class UsageStatsCapture(private val context: Context) {
         }
     }
 
-    private fun getAppName(
-        packageName: String
-    ): String {
+    // -------------------------------------------------------------
+    // App-Namen anhand des Package-Namens ermitteln
+    // -------------------------------------------------------------
 
+    private fun getAppName(packageName: String): String {
         return try {
 
             val packageManager =
@@ -346,13 +335,19 @@ class UsageStatsCapture(private val context: Context) {
                     0
                 )
 
-            packageManager.getApplicationLabel(
-                applicationInfo
-            ).toString()
+            packageManager
+                .getApplicationLabel(applicationInfo)
+                .toString()
 
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+
+            Log.w(
+                TAG,
+                "App-Name konnte nicht ermittelt werden: $packageName"
+            )
 
             packageName
         }
     }
 }
+
