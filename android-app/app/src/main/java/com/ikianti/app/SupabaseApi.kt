@@ -135,6 +135,39 @@ object SupabaseApi {
         })
     }
 
+fun updateLastBoot(deviceId: String) {
+    val body = JSONObject().apply {
+        put("last_boot", System.currentTimeMillis())
+    }.toString()
+
+    val request = Request.Builder()
+        .url("$SUPABASE_URL/rest/v1/devices?id=eq.$deviceId")
+        .headers(anonHeaders())
+        .patch(body.toRequestBody(JSON_MEDIA))
+        .build()
+
+    client.newCall(request).enqueue(object : Callback {
+
+        override fun onFailure(call: Call, e: IOException) {
+            Log.e(TAG, "updateLastBoot fehlgeschlagen", e)
+        }
+
+        override fun onResponse(call: Call, response: Response) {
+            if (!response.isSuccessful) {
+                Log.e(
+                    TAG,
+                    "updateLastBoot HTTP-Fehler ${response.code}"
+                )
+            } else {
+                Log.d(TAG, "updateLastBoot OK")
+            }
+
+            response.close()
+        }
+    })
+}
+
+
     // ── Standort speichern ────────────────────────────────────────────────────
 
     fun insertLocation(

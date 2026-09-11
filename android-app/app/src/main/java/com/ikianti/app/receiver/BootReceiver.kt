@@ -13,14 +13,31 @@ class BootReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         val action = intent.action ?: return
+
         if (action != Intent.ACTION_BOOT_COMPLETED &&
-            action != "android.intent.action.LOCKED_BOOT_COMPLETED") return
+            action != "android.intent.action.LOCKED_BOOT_COMPLETED"
+        ) {
+            return
+        }
 
-        val deviceId = DeviceManager.getDeviceId(context)
-        Log.d("BootReceiver", "Neustart – Token aktualisieren für $deviceId")
+        val deviceId =
+            DeviceManager.getDeviceId(context)
 
+        Log.d(
+            "BootReceiver",
+            "Neustart erkannt – Geräteinformationen aktualisieren für $deviceId"
+        )
+
+        // Zeitpunkt des letzten Systemstarts speichern.
+        SupabaseApi.updateLastBoot(deviceId)
+
+        // FCM-Token nach einem Neustart aktualisieren.
         Firebase.messaging.token.addOnSuccessListener { token ->
-            SupabaseApi.updateFcmToken(deviceId, token)
+            SupabaseApi.updateFcmToken(
+                deviceId,
+                token
+            )
         }
     }
 }
+
