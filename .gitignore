@@ -27,3 +27,7 @@ supabase/.temp/
 
 # Firebase local cache
 .firebase/*.cache
+
+# Lokale Entwicklungsdateien
+.vscode/
+android-app/iki-debug-v3.4.ps1
