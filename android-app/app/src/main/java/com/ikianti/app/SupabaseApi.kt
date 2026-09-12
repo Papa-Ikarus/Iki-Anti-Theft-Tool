@@ -52,19 +52,34 @@ object SupabaseApi {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "upsertDevice Netzwerk-Fehler", e)
-                onDone()
-            }
+    Log.e(TAG, "upsertDevice Netzwerk-Fehler", e)
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "UPSERT_DEVICE_NETWORK",
+        e.message ?: "Netzwerkfehler"
+    )
+
+    onDone()
+}
 
             override fun onResponse(call: Call, response: Response) {
                 val body = response.body?.string()
 
                 if (!response.isSuccessful) {
-                    Log.e(
-                        TAG,
-                        "upsertDevice HTTP-Fehler ${response.code}: $body"
-                    )
-                } else {
+    Log.e(
+        TAG,
+        "upsertDevice HTTP-Fehler ${response.code}: $body"
+    )
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "UPSERT_DEVICE_HTTP_${response.code}",
+        body ?: "HTTP-Fehler ${response.code}"
+    )
+} else {
                     Log.d(TAG, "upsertDevice OK ${response.code}")
                 }
 
@@ -117,16 +132,30 @@ object SupabaseApi {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "updateLastSeen fehlgeschlagen", e)
-            }
+    Log.e(TAG, "updateLastSeen fehlgeschlagen", e)
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "UPDATE_LAST_SEEN_NETWORK",
+        e.message ?: "Netzwerkfehler"
+    )
+}
 
             override fun onResponse(call: Call, response: Response) {
                 if (!response.isSuccessful) {
-                    Log.e(
-                        TAG,
-                        "updateLastSeen HTTP-Fehler ${response.code}"
-                    )
-                } else {
+    Log.e(
+        TAG,
+        "updateLastSeen HTTP-Fehler ${response.code}"
+    )
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "UPDATE_LAST_SEEN_HTTP_${response.code}",
+        "HTTP-Fehler ${response.code}"
+    )
+} else {
                     Log.d(TAG, "updateLastSeen OK")
                 }
 
@@ -135,37 +164,51 @@ object SupabaseApi {
         })
     }
 
-fun updateLastBoot(deviceId: String) {
-    val body = JSONObject().apply {
-        put("last_boot", System.currentTimeMillis())
-    }.toString()
+    fun updateLastBoot(deviceId: String) {
+        val body = JSONObject().apply {
+            put("last_boot", System.currentTimeMillis())
+        }.toString()
 
-    val request = Request.Builder()
-        .url("$SUPABASE_URL/rest/v1/devices?id=eq.$deviceId")
-        .headers(anonHeaders())
-        .patch(body.toRequestBody(JSON_MEDIA))
-        .build()
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/rest/v1/devices?id=eq.$deviceId")
+            .headers(anonHeaders())
+            .patch(body.toRequestBody(JSON_MEDIA))
+            .build()
 
-    client.newCall(request).enqueue(object : Callback {
+        client.newCall(request).enqueue(object : Callback {
 
-        override fun onFailure(call: Call, e: IOException) {
-            Log.e(TAG, "updateLastBoot fehlgeschlagen", e)
-        }
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "updateLastBoot fehlgeschlagen", e)
 
-        override fun onResponse(call: Call, response: Response) {
-            if (!response.isSuccessful) {
-                Log.e(
-                    TAG,
-                    "updateLastBoot HTTP-Fehler ${response.code}"
+                reportError(
+                    deviceId,
+                    "SupabaseApi",
+                    "UPDATE_LAST_BOOT_NETWORK",
+                    e.message ?: "Netzwerkfehler"
                 )
-            } else {
-                Log.d(TAG, "updateLastBoot OK")
             }
 
-            response.close()
-        }
-    })
-}
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    Log.e(
+                        TAG,
+                        "updateLastBoot HTTP-Fehler ${response.code}"
+                    )
+
+                    reportError(
+                        deviceId,
+                        "SupabaseApi",
+                        "UPDATE_LAST_BOOT_HTTP_${response.code}",
+                        "HTTP-Fehler ${response.code}"
+                    )
+                } else {
+                    Log.d(TAG, "updateLastBoot OK")
+                }
+
+                response.close()
+            }
+        })
+    }
 
 
     // ── Standort speichern ────────────────────────────────────────────────────
@@ -193,19 +236,34 @@ fun updateLastBoot(deviceId: String) {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "insertLocation fehlgeschlagen", e)
-                onDone()
-            }
+    Log.e(TAG, "insertLocation fehlgeschlagen", e)
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "INSERT_LOCATION_NETWORK",
+        e.message ?: "Netzwerkfehler"
+    )
+
+    onDone()
+}
 
             override fun onResponse(call: Call, response: Response) {
                 val success = response.isSuccessful
 
                 if (!success) {
-                    Log.e(
-                        TAG,
-                        "insertLocation HTTP-Fehler ${response.code}"
-                    )
-                } else {
+    Log.e(
+        TAG,
+        "insertLocation HTTP-Fehler ${response.code}"
+    )
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "INSERT_LOCATION_HTTP_${response.code}",
+        "HTTP-Fehler ${response.code}"
+    )
+} else {
                     Log.d(TAG, "insertLocation OK")
                 }
 
@@ -286,9 +344,17 @@ fun updateLastBoot(deviceId: String) {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "UsageLogs Netzwerkfehler", e)
-                onDone()
-            }
+    Log.e(TAG, "UsageLogs Netzwerkfehler", e)
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "INSERT_USAGE_LOGS_NETWORK",
+        e.message ?: "Netzwerkfehler"
+    )
+
+    onDone()
+}
 
             override fun onResponse(call: Call, response: Response) {
                 val responseBody = response.body?.string()
@@ -299,17 +365,88 @@ fun updateLastBoot(deviceId: String) {
                 val success = response.isSuccessful
 
                 if (!success) {
-                    Log.e(
-                        TAG,
-                        "UsageLogs-Fehler ${response.code}: $responseBody"
-                    )
-                } else {
+    Log.e(
+        TAG,
+        "UsageLogs-Fehler ${response.code}: $responseBody"
+    )
+
+    reportError(
+        deviceId,
+        "SupabaseApi",
+        "INSERT_USAGE_LOGS_HTTP_${response.code}",
+        responseBody ?: "HTTP-Fehler ${response.code}"
+    )
+} else {
                     Log.d(TAG, "UsageLogs OK")
                     updateLastSeen(deviceId)
                 }
 
                 response.close()
                 onDone()
+            }
+        })
+    }
+
+    // ── Fehler an das zentrale Fehlerprotokoll melden ─────────────────────────
+
+    private fun reportError(
+        deviceId: String,
+        source: String,
+        errorCode: String,
+        message: String
+    ) {
+        insertErrorLog(
+            deviceId = deviceId,
+            level = "ERROR",
+            source = source,
+            errorCode = errorCode,
+            message = message
+        )
+    }
+
+    // ── Fehlerprotokoll ───────────────────────────────────────────────────────
+
+    fun insertErrorLog(
+        deviceId: String,
+        level: String,
+        source: String,
+        errorCode: String,
+        message: String,
+        onDone: (() -> Unit)? = null
+    ) {
+        val body = JSONObject().apply {
+            put("device_id", deviceId)
+            put("level", level)
+            put("source", source)
+            put("error_code", errorCode)
+            put("message", message)
+        }.toString()
+
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/rest/v1/error_logs")
+            .headers(anonHeaders())
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+
+            override fun onFailure(call: Call, e: IOException) {
+                Log.e(TAG, "insertErrorLog Netzwerk-Fehler", e)
+                onDone?.invoke()
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (!response.isSuccessful) {
+                    Log.e(
+                        TAG,
+                        "insertErrorLog HTTP-Fehler ${response.code}"
+                    )
+                } else {
+                    Log.d(TAG, "insertErrorLog OK")
+                }
+
+                response.close()
+                onDone?.invoke()
             }
         })
     }

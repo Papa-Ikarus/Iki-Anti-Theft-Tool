@@ -35,16 +35,24 @@ class MainActivity : AppCompatActivity() {
     )
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val missing = requiredPermissions.filter {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-        }
-        if (missing.isNotEmpty()) {
-            ActivityCompat.requestPermissions(this, missing.toTypedArray(), REQUEST_PERMISSIONS)
-        } else {
-            checkUsageStatsPermission()
-        }
+    super.onCreate(savedInstanceState)
+
+
+
+    val missing = requiredPermissions.filter {
+        ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
     }
+
+    if (missing.isNotEmpty()) {
+        ActivityCompat.requestPermissions(
+            this,
+            missing.toTypedArray(),
+            REQUEST_PERMISSIONS
+        )
+    } else {
+        checkUsageStatsPermission()
+    }
+}
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
