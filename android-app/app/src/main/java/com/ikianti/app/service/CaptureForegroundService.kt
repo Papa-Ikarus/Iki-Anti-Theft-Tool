@@ -15,6 +15,7 @@ import androidx.core.app.NotificationCompat
 import com.ikianti.app.capture.AudioCapture
 import com.ikianti.app.capture.CameraCapture
 import com.ikianti.app.capture.LocationCapture
+import com.ikianti.app.capture.LocationTracking
 import com.ikianti.app.capture.UsageStatsCapture
 import java.util.ArrayDeque
 import java.util.UUID
@@ -72,6 +73,9 @@ class CaptureForegroundService : Service() {
 
     private val mainHandler =
         Handler(Looper.getMainLooper())
+
+    private val locationTracking =
+        LocationTracking(this)
 
     /**
      * Interne FIFO-Warteschlange.
@@ -135,6 +139,7 @@ class CaptureForegroundService : Service() {
         super.onCreate()
 
         startForegroundCompat()
+        locationTracking.start()
 
         val filter =
             IntentFilter(ACTION_COMMAND)
@@ -495,6 +500,7 @@ class CaptureForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        locationTracking.stop()
 
         timeoutRunnable?.let {
             mainHandler.removeCallbacks(it)
