@@ -500,7 +500,52 @@ window.refreshDashboard = async function () {
     iconAnchor: [12, 12],
   });
 }
+async function focusLatestLocation(deviceId) {
+  const { data, error } = await supabase
+    .from("locations")
+    .select("lat, lng, timestamp")
+    .eq("device_id", deviceId)
+    .order("timestamp", { ascending: false })
+    .limit(1);
 
+  if (error) {
+    console.error(
+      "❌ Aktueller Standort konnte nicht geladen werden:",
+      error
+    );
+    return false;
+  }
+
+  if (!data?.length) {
+    console.warn(
+      "⚠️ Kein Standort für Gerät gefunden:",
+      deviceId
+    );
+    return false;
+  }
+
+  const location = data[0];
+  const lat = Number(location.lat);
+  const lng = Number(location.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    console.warn(
+      "⚠️ Ungültige Standortkoordinaten:",
+      location
+    );
+    return false;
+  }
+
+  updateMarker(deviceId, lat, lng);
+
+  map.setView([lat, lng], 17, {
+    animate: true
+  });
+
+  markers[deviceId]?.openPopup();
+
+  return true;
+}
     function updateMarker(deviceId, lat, lng) {
   const deviceIndex = allDevices.findIndex(d => d.id === deviceId);
   const color =
@@ -683,36 +728,104 @@ function startLiveStatusRefresh() {
     };
 
     // ── Echtzeit-Updates ────────────────────────────────────────────────────
-    function subscribeLocationUpdates() {
+let routeLoading = {};
+
+function subscribeLocationUpdates() {
   supabase.channel("locations-all")
-    .on("postgres_changes", { event: "INSERT", schema: "public", table: "locations" },
-      payload => {
-        const { device_id, lat, lng } = payload.new;
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "locations"
+      },
+      async payload => {
+        const {
+          device_id,
+          lat,
+          lng
+        } = payload.new;
+
         updateMarker(device_id, lat, lng);
 
-        // Route für dieses Gerät neu laden
-        loadLocationHistory(device_id);
-      })
+        // Nur die Route des ausgewählten Geräts sofort aktualisieren.
+        if (selectedDevice === device_id && !routeLoading[device_id]) {
+          routeLoading[device_id] = true;
+
+          try {
+            await loadLocationHistory(device_id);
+          } finally {
+            routeLoading[device_id] = false;
+          }
+        }
+      }
+    )
     .subscribe();
 }
 
     // ── Steuerung ───────────────────────────────────────────────────────────
     window.trigger = async function (command) {
-      if (!selectedDevice) { document.getElementById("status").textContent = "⚠️ Erst ein Gerät auswählen"; return; }
-      document.getElementById("status").textContent = `⏳ Sende ${command} an ${selectedDevice}…`;
-      try {
-        const res = await fetch(EDGE_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
-          body: JSON.stringify({ deviceId: selectedDevice, command }),
-        });
-        const json = await res.json();
-        document.getElementById("status").textContent =
-          json.success ? `✅ "${command}" → ${selectedDevice}` : `❌ ${json.error}`;
-      } catch (err) {
-        document.getElementById("status").textContent = `❌ ${err.message}`;
+  if (!selectedDevice) {
+    document.getElementById("status").textContent =
+      "⚠️ Erst ein Gerät auswählen";
+    return;
+  }
+
+  document.getElementById("status").textContent =
+    `⏳ Sende ${command} an ${selectedDevice}…`;
+
+  try {
+    const res = await fetch(EDGE_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`
+      },
+      body: JSON.stringify({
+        deviceId: selectedDevice,
+        command
+      }),
+    });
+
+    const json = await res.json();
+
+    if (!json.success) {
+      document.getElementById("status").textContent =
+        `❌ ${json.error}`;
+      return;
+    }
+
+    document.getElementById("status").textContent =
+      `✅ "${command}" → ${selectedDevice}`;
+
+    // Nach einem Standort-Befehl den neuesten Standort laden
+    if (command === "location") {
+      let found = false;
+
+      for (let i = 0; i < 6; i++) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        found = await focusLatestLocation(selectedDevice);
+
+        if (found) {
+          break;
+        }
       }
-    };
+
+      if (found) {
+        document.getElementById("status").textContent =
+          `📍 Aktueller Standort von ${selectedDevice}`;
+      } else {
+        document.getElementById("status").textContent =
+          `⚠️ Standortbefehl gesendet, aber noch kein neuer Standort verfügbar`;
+      }
+    }
+
+  } catch (err) {
+    document.getElementById("status").textContent =
+      `❌ ${err.message}`;
+  }
+};
 
     
 window.refreshDashboard = async function () {
