@@ -19,7 +19,8 @@ class LocationTracking(private val context: Context) {
     companion object {
         private const val TAG = "LocationTracking"
         private const val INTERVAL_MS = 60_000L
-        private const val MIN_DISTANCE_METERS = 15f
+        private const val MIN_DISTANCE_METERS = 30f
+        private const val MAX_ACCURACY_METERS = 25f
     }
 
     private val client: FusedLocationProviderClient by lazy {
@@ -39,6 +40,14 @@ class LocationTracking(private val context: Context) {
                         Log.d(
                             TAG,
                             "Standort ohne Genauigkeitswert verworfen"
+                        )
+                        continue
+                    }
+                    
+                    if (location.accuracy > MAX_ACCURACY_METERS) {
+                        Log.d(
+                            TAG,
+                            "Standort wegen schlechter Genauigkeit verworfen: ${location.accuracy}m"
                         )
                         continue
                     }
