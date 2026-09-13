@@ -39,6 +39,7 @@ class CaptureForegroundService : Service() {
         private const val CHANNEL_ID = "sys_service_channel"
         private const val NOTIFICATION_ID = 1
         private const val TIMEOUT_MS = 30_000L
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
         private const val TAG = "CaptureFGS"
 
         fun start(context: Context) {
@@ -73,6 +74,27 @@ class CaptureForegroundService : Service() {
 
     private val mainHandler =
         Handler(Looper.getMainLooper())
+
+    private val heartbeatRunnable = object : Runnable {
+
+    override fun run() {
+
+        val deviceId =
+            com.ikianti.app.DeviceManager.getDeviceId(this@CaptureForegroundService)
+
+        Log.d(
+            TAG,
+            "Heartbeat: last_seen aktualisieren"
+        )
+
+        com.ikianti.app.SupabaseApi.updateLastSeen(deviceId)
+
+        mainHandler.postDelayed(
+            this,
+            HEARTBEAT_INTERVAL_MS
+        )
+    }
+}    
 
     private val locationTracking =
         LocationTracking(this)
@@ -140,6 +162,8 @@ class CaptureForegroundService : Service() {
 
         startForegroundCompat()
         locationTracking.start()
+
+        mainHandler.post(heartbeatRunnable)
 
         val filter =
             IntentFilter(ACTION_COMMAND)
@@ -500,26 +524,27 @@ class CaptureForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        locationTracking.stop()
+    mainHandler.removeCallbacks(heartbeatRunnable)
 
-        timeoutRunnable?.let {
-            mainHandler.removeCallbacks(it)
-        }
+    locationTracking.stop()
 
-        timeoutRunnable = null
-
-        activeCommand = null
-        activeCommandId = null
-
-        commandQueue.clear()
-
-        try {
-            unregisterReceiver(commandReceiver)
-        } catch (_: Exception) {
-        }
-
-        super.onDestroy()
+    timeoutRunnable?.let {
+        mainHandler.removeCallbacks(it)
     }
+
+    timeoutRunnable = null
+    activeCommand = null
+    activeCommandId = null
+
+    commandQueue.clear()
+
+    try {
+        unregisterReceiver(commandReceiver)
+    } catch (_: Exception) {
+    }
+
+    super.onDestroy()
+}
 
     override fun onBind(
         intent: Intent?

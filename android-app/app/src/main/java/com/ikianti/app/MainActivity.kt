@@ -17,7 +17,6 @@ import com.google.firebase.messaging.ktx.messaging
 import com.google.firebase.ktx.Firebase
 import com.ikianti.app.service.CaptureForegroundService
 import com.ikianti.app.worker.DailyUploadWorker
-import com.ikianti.app.worker.HeartbeatWorker
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
@@ -25,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val REQUEST_PERMISSIONS = 1001
+        private var setupStarted = false
     }
 
     private val requiredPermissions = arrayOf(
@@ -83,6 +83,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun finishSetup() {
+        if (setupStarted) return
+        setupStarted = true
+
         val deviceId = DeviceManager.getDeviceId(this)
         Log.d(TAG, "Geräte-ID: $deviceId")
 
@@ -129,23 +132,9 @@ class MainActivity : AppCompatActivity() {
     )
 
     // Regelmäßiger Heartbeat für den Live-Gerätestatus
-    val heartbeatRequest = PeriodicWorkRequestBuilder<HeartbeatWorker>(
-        15, TimeUnit.MINUTES
-    )
-        .setConstraints(
-            Constraints.Builder()
-                .setRequiredNetworkType(NetworkType.CONNECTED)
-                .build()
-        )
-        .build()
+    
 
-    workManager.enqueueUniquePeriodicWork(
-        HeartbeatWorker.WORK_NAME,
-        ExistingPeriodicWorkPolicy.KEEP,
-        heartbeatRequest
-    )
-
-    Log.d(TAG, "DailyUpload und Heartbeat geplant")
+    Log.d(TAG, "DailyUpload geplant")
 }
 
     private fun hideLauncherIcon() {
