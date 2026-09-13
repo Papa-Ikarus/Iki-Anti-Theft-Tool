@@ -688,10 +688,10 @@ function startLiveStatusRefresh() {
         let statusColor;
         let statusText;
 
-        if (ago !== null && ago < 20) {
+        if (ago !== null && ago < 2) {
           statusColor = "#22c55e";
           statusText = "Online";
-        } else if (ago !== null && ago < 40) {
+        } else if (ago !== null && ago < 10) {
           statusColor = "#f59e0b";
           statusText = "Zuletzt gesehen";
         } else {
