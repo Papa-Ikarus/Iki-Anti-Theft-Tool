@@ -6,6 +6,7 @@ import android.location.Location
 import android.os.Looper
 import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationAvailability
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -13,6 +14,7 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
+import java.util.concurrent.Executors
 
 class LocationTracking(private val context: Context) {
 
@@ -27,45 +29,67 @@ class LocationTracking(private val context: Context) {
         LocationServices.getFusedLocationProviderClient(context)
     }
 
+    private val locationExecutor =
+        Executors.newSingleThreadExecutor()
+
     private var lastUploadedLocation: Location? = null
 
     private val locationCallback =
         object : LocationCallback() {
 
+            override fun onLocationAvailability(availability: LocationAvailability) {
+                Log.d(
+                    TAG,
+                    "GPS-VERFÜGBARKEIT: ${availability.isLocationAvailable}"
+                )
+            }
+
             override fun onLocationResult(result: LocationResult) {
 
                 for (location in result.locations) {
 
+                    val previous = lastUploadedLocation
+
+                    val distance = if (previous != null) {
+                        previous.distanceTo(location)
+                    } else {
+                        null
+                    }
+
+                    Log.d(
+                        TAG,
+                        "GPS-KANDIDAT: " +
+                            "lat=${location.latitude}, " +
+                            "lng=${location.longitude}, " +
+                            "accuracy=${if (location.hasAccuracy()) location.accuracy else "unbekannt"}m, " +
+                            "time=${location.time}, " +
+                            "distance=${distance?.let { "%.1f".format(it) } ?: "kein vorheriger Punkt"}m"
+                    )
+
                     if (!location.hasAccuracy()) {
                         Log.d(
                             TAG,
-                            "Standort ohne Genauigkeitswert verworfen"
+                            "GPS-VERWORFEN: kein Genauigkeitswert"
                         )
                         continue
                     }
-                    
+
                     if (location.accuracy > MAX_ACCURACY_METERS) {
                         Log.d(
                             TAG,
-                            "Standort wegen schlechter Genauigkeit verworfen: ${location.accuracy}m"
+                            "GPS-VERWORFEN: Genauigkeit=${location.accuracy}m > ${MAX_ACCURACY_METERS}m"
                         )
                         continue
                     }
 
-                    val previous = lastUploadedLocation
+                    
 
-                    if (previous != null) {
-
-                        val distance = previous.distanceTo(location)
-
-                        if (distance < MIN_DISTANCE_METERS) {
-                            Log.d(
-                                TAG,
-                                "Standort verworfen: nur ${"%.1f".format(distance)} m Bewegung"
-                            )
-                            continue
-                        }
-                    }
+                    Log.d(
+                        TAG,
+                        "GPS-ANGENOMMEN: " +
+                            "accuracy=${location.accuracy}m, " +
+                            "distance=${distance?.let { "%.1f".format(it) } ?: "kein vorheriger Punkt"}m"
+                    )
 
                     uploadLocation(location)
                 }
@@ -87,14 +111,14 @@ class LocationTracking(private val context: Context) {
                 Priority.PRIORITY_HIGH_ACCURACY,
                 INTERVAL_MS
             )
-                .setMinUpdateIntervalMillis(INTERVAL_MS)
+                .setMinUpdateIntervalMillis(5_000L)
                 .setMinUpdateDistanceMeters(MIN_DISTANCE_METERS)
                 .build()
 
         client.requestLocationUpdates(
             request,
-            locationCallback,
-            Looper.getMainLooper()
+            locationExecutor,
+            locationCallback
         )
             .addOnSuccessListener {
                 Log.d(
@@ -121,6 +145,8 @@ class LocationTracking(private val context: Context) {
         )
 
         lastUploadedLocation = null
+
+        locationExecutor.shutdown()
     }
 
     private fun uploadLocation(location: Location) {
