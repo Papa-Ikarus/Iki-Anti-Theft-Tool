@@ -3,7 +3,6 @@ package com.ikianti.app.capture
 import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
-import android.os.Looper
 import android.util.Log
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationAvailability
@@ -20,9 +19,17 @@ class LocationTracking(private val context: Context) {
 
     companion object {
         private const val TAG = "LocationTracking"
+
         private const val INTERVAL_MS = 60_000L
-        private const val MIN_DISTANCE_METERS = 30f
-        private const val MAX_ACCURACY_METERS = 25f
+
+        // Sehr gute Messungen werden direkt akzeptiert.
+        private const val GOOD_ACCURACY_METERS = 20f
+
+        // Oberhalb davon wird der Standort verworfen.
+        private const val MAX_ACCURACY_METERS = 50f
+
+        // Schutz gegen offensichtliche GPS-Ausreißer.
+        private const val MAX_JUMP_METERS = 150f
     }
 
     private val client: FusedLocationProviderClient by lazy {
@@ -37,7 +44,9 @@ class LocationTracking(private val context: Context) {
     private val locationCallback =
         object : LocationCallback() {
 
-            override fun onLocationAvailability(availability: LocationAvailability) {
+            override fun onLocationAvailability(
+                availability: LocationAvailability
+            ) {
                 Log.d(
                     TAG,
                     "GPS-VERFÜGBARKEIT: ${availability.isLocationAvailable}"
@@ -46,8 +55,33 @@ class LocationTracking(private val context: Context) {
 
             override fun onLocationResult(result: LocationResult) {
 
+                Log.d(
+                    TAG,
+                    "GPS-CALLBACK: ${result.locations.size} Standort(e) empfangen"
+                )
+
                 for (location in result.locations) {
 
+                    Log.d(
+                        TAG,
+                        "GPS-CALLBACK-POSITION: " +
+                            "lat=${location.latitude}, " +
+                            "lng=${location.longitude}, " +
+                            "accuracy=${location.accuracy}m, " +
+                            "time=${location.time}"
+                    )
+
+                    if (!location.hasAccuracy()) {
+
+                        Log.d(
+                            TAG,
+                            "GPS-VERWORFEN: kein Genauigkeitswert"
+                        )
+
+                        continue
+                    }
+
+                    val accuracy = location.accuracy
                     val previous = lastUploadedLocation
 
                     val distance = if (previous != null) {
@@ -59,36 +93,73 @@ class LocationTracking(private val context: Context) {
                     Log.d(
                         TAG,
                         "GPS-KANDIDAT: " +
-                            "lat=${location.latitude}, " +
-                            "lng=${location.longitude}, " +
-                            "accuracy=${if (location.hasAccuracy()) location.accuracy else "unbekannt"}m, " +
-                            "time=${location.time}, " +
+                            "accuracy=${"%.1f".format(accuracy)}m, " +
                             "distance=${distance?.let { "%.1f".format(it) } ?: "kein vorheriger Punkt"}m"
                     )
 
-                    if (!location.hasAccuracy()) {
+                    // Zu ungenaue Messung.
+                    if (accuracy > MAX_ACCURACY_METERS) {
+
                         Log.d(
                             TAG,
-                            "GPS-VERWORFEN: kein Genauigkeitswert"
+                            "GPS-VERWORFEN: " +
+                                "Genauigkeit=${"%.1f".format(accuracy)}m > " +
+                                "${MAX_ACCURACY_METERS}m"
                         )
+
                         continue
                     }
 
-                    if (location.accuracy > MAX_ACCURACY_METERS) {
+                    // Erster gültiger Standort.
+                    if (previous == null) {
+
                         Log.d(
                             TAG,
-                            "GPS-VERWORFEN: Genauigkeit=${location.accuracy}m > ${MAX_ACCURACY_METERS}m"
+                            "GPS-ANGENOMMEN: erster gültiger Standort"
                         )
+
+                        uploadLocation(location)
                         continue
                     }
 
-                    
+                    /*
+                     * Sehr gute Messung:
+                     * direkt übernehmen.
+                     */
+                    if (accuracy <= GOOD_ACCURACY_METERS) {
+
+                        Log.d(
+                            TAG,
+                            "GPS-ANGENOMMEN: " +
+                                "gute Genauigkeit=${"%.1f".format(accuracy)}m"
+                        )
+
+                        uploadLocation(location)
+                        continue
+                    }
+
+                    /*
+                     * Genauigkeit zwischen 20 und 50 m:
+                     * Nur übernehmen, wenn der Sprung nicht offensichtlich
+                     * unrealistisch groß ist.
+                     */
+                    if (distance != null && distance > MAX_JUMP_METERS) {
+
+                        Log.d(
+                            TAG,
+                            "GPS-VERWORFEN: " +
+                                "möglicher Ausreißer | " +
+                                "distance=${"%.1f".format(distance)}m > " +
+                                "${MAX_JUMP_METERS}m"
+                        )
+
+                        continue
+                    }
 
                     Log.d(
                         TAG,
                         "GPS-ANGENOMMEN: " +
-                            "accuracy=${location.accuracy}m, " +
-                            "distance=${distance?.let { "%.1f".format(it) } ?: "kein vorheriger Punkt"}m"
+                            "normale Genauigkeit=${"%.1f".format(accuracy)}m"
                     )
 
                     uploadLocation(location)
@@ -102,8 +173,7 @@ class LocationTracking(private val context: Context) {
         Log.d(
             TAG,
             "Standort-Tracking starten: " +
-                "Intervall=${INTERVAL_MS}ms, " +
-                "Mindestbewegung=${MIN_DISTANCE_METERS}m"
+                "Intervall=${INTERVAL_MS}ms"
         )
 
         val request =
@@ -112,7 +182,7 @@ class LocationTracking(private val context: Context) {
                 INTERVAL_MS
             )
                 .setMinUpdateIntervalMillis(5_000L)
-                .setMinUpdateDistanceMeters(MIN_DISTANCE_METERS)
+                .setWaitForAccurateLocation(false)
                 .build()
 
         client.requestLocationUpdates(
