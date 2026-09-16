@@ -126,6 +126,7 @@
     const supabase   = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const fbApp      = initializeApp(FIREBASE_CONFIG);
     const messaging  = getMessaging(fbApp);
+    const MAPY_API_KEY = "UjVQ2Tj3fhCTUb5yoRZr-IX3M81qApHJvxQ8QOS6Wz0";
 
     let authToken       = null;
     let selectedDevice  = null;
@@ -339,6 +340,7 @@ window.registerWebPush = async function () {
   }
 };
 
+registerWebPush();
 
 window.refreshDashboard = async function () {
   if (!authToken || !selectedDevice) return;
@@ -364,9 +366,37 @@ window.refreshDashboard = async function () {
     // ── Karte ───────────────────────────────────────────────────────────────
     function initMap() {
       map = L.map("map").setView([51.5, 7.0], 6);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "© OpenStreetMap", maxZoom: 19,
-      }).addTo(map);
+
+      const mapyBasic = L.tileLayer(
+        `https://api.mapy.com/v1/maptiles/basic/256/{z}/{x}/{y}?apikey=${MAPY_API_KEY}`,
+        {
+          maxZoom: 19,
+          attribution:
+            '&copy; <a href="https://mapy.com/" target="_blank">Mapy.com</a>',
+        }
+      );
+
+      const mapyAerial = L.tileLayer(
+        `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${MAPY_API_KEY}`,
+        {
+          maxZoom: 19,
+          attribution:
+            '&copy; <a href="https://mapy.com/" target="_blank">Mapy.com</a>',
+        }
+      );
+
+      mapyBasic.addTo(map);
+
+      L.control.layers(
+        {
+          "🗺️ Karte": mapyBasic,
+          "🛰️ Satellit": mapyAerial
+        },
+        null,
+        {
+          collapsed: false,
+        }
+      ).addTo(map);
     }
 
     async function loadLocationHistory(deviceId) {
