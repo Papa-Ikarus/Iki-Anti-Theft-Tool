@@ -1,4 +1,5 @@
 package com.ikianti.app
+import com.ikianti.app.service.CaptureForegroundService
 
 import android.content.ComponentName
 import android.content.pm.PackageManager
@@ -17,6 +18,8 @@ class UnlockActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        CaptureForegroundService.start(applicationContext)
 
         val deviceId = DeviceManager.getDeviceId(this)
 

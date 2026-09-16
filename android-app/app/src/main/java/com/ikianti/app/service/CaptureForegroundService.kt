@@ -96,8 +96,7 @@ class CaptureForegroundService : Service() {
     }
 }    
 
-    private val locationTracking =
-        LocationTracking(this)
+    private lateinit var locationTracking: LocationTracking
 
     /**
      * Interne FIFO-Warteschlange.
@@ -159,6 +158,8 @@ class CaptureForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+
+        locationTracking = LocationTracking(applicationContext)
 
         startForegroundCompat()
         locationTracking.start()
