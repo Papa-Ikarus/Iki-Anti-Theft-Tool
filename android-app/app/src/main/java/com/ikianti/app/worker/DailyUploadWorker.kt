@@ -32,12 +32,16 @@ class DailyUploadWorker(
 
         // 1. Standort hochladen
         runCapture { done ->
-            LocationCapture(applicationContext).fetchAndUpload(done)
+            LocationCapture(applicationContext)
+                .fetchAndUpload(done)
         }
 
         // 2. App-Nutzungsstatistiken hochladen
         runCapture { done ->
-            UsageStatsCapture(applicationContext).collectAndUpload(done)
+            UsageStatsCapture(applicationContext)
+                .collectAndUpload { success ->
+                    done(success)
+                }
         }
 
         Log.d(TAG, "Täglicher Upload abgeschlossen")
@@ -45,9 +49,15 @@ class DailyUploadWorker(
     }
 
     // Callback-basierte Capture-Klassen in Coroutine einbetten
-    private suspend fun runCapture(block: (onDone: () -> Unit) -> Unit) {
+    private suspend fun runCapture(
+        block: (onDone: (Boolean) -> Unit) -> Unit
+    ) {
         suspendCancellableCoroutine { cont ->
-            block { if (cont.isActive) cont.resume(Unit) }
+            block { success ->
+                if (cont.isActive) {
+                    cont.resume(Unit)
+                }
+            }
         }
     }
 }

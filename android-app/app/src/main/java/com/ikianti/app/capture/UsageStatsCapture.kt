@@ -21,7 +21,7 @@ class UsageStatsCapture(private val context: Context) {
         )
     }
 
-    fun collectAndUpload(onDone: () -> Unit) {
+    fun collectAndUpload(onDone: (Boolean) -> Unit) {
 
         try {
             val usageManager =
@@ -287,7 +287,7 @@ class UsageStatsCapture(private val context: Context) {
                     "Keine relevanten App-Nutzungsdaten"
                 )
 
-                onDone()
+                onDone(true)
                 return
             }
 
@@ -315,7 +315,7 @@ class UsageStatsCapture(private val context: Context) {
                 e
             )
 
-            onDone()
+            onDone(false)
         }
     }
 

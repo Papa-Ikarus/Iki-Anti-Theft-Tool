@@ -22,7 +22,7 @@ class LocationCapture(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    fun fetchAndUpload(onDone: () -> Unit) {
+        fun fetchAndUpload(onDone: (Boolean) -> Unit) {
 
         val client =
             LocationServices.getFusedLocationProviderClient(context)
@@ -58,8 +58,8 @@ class LocationCapture(private val context: Context) {
     @SuppressLint("MissingPermission")
     private fun requestCurrentLocation(
         client: FusedLocationProviderClient,
-        onDone: () -> Unit
-    ) {
+        onDone: (Boolean) -> Unit
+    ) {    
 
         val cancellationTokenSource =
             CancellationTokenSource()
@@ -70,11 +70,11 @@ class LocationCapture(private val context: Context) {
         val finished =
             AtomicBoolean(false)
 
-        fun finishOnce() {
+        fun finishOnce(success: Boolean) {
             if (finished.compareAndSet(false, true)) {
                 handler.removeCallbacksAndMessages(null)
                 cancellationTokenSource.cancel()
-                onDone()
+                onDone(success)
             }
         }
 
@@ -84,7 +84,7 @@ class LocationCapture(private val context: Context) {
                 "getCurrentLocation Timeout nach ${CURRENT_LOCATION_TIMEOUT_MS} ms"
             )
 
-            finishOnce()
+            finishOnce(false)
         }
 
         handler.postDelayed(
@@ -114,7 +114,7 @@ class LocationCapture(private val context: Context) {
                         "getCurrentLocation liefert null"
                     )
 
-                    finishOnce()
+                    finishOnce(false)
                     return@addOnSuccessListener
                 }
 
@@ -128,7 +128,7 @@ class LocationCapture(private val context: Context) {
                 uploadLocation(
                     location
                 ) {
-                    finishOnce()
+                    finishOnce(true)
                 }
             }
             .addOnFailureListener { e ->
@@ -139,13 +139,13 @@ class LocationCapture(private val context: Context) {
                     e
                 )
 
-                finishOnce()
+                finishOnce(false)
             }
     }
 
     private fun uploadLocation(
         location: Location,
-        onDone: () -> Unit
+        onDone: (Boolean) -> Unit
     ) {
 
         val deviceId =

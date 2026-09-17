@@ -218,7 +218,7 @@ object SupabaseApi {
         lat: Double,
         lng: Double,
         timestamp: Long,
-        onDone: () -> Unit
+        onDone: (Boolean) -> Unit
     ) {
         val body = JSONObject().apply {
             put("device_id", deviceId)
@@ -236,44 +236,41 @@ object SupabaseApi {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-    Log.e(TAG, "insertLocation fehlgeschlagen", e)
+                Log.e(TAG, "insertLocation fehlgeschlagen", e)
 
-    reportError(
-        deviceId,
-        "SupabaseApi",
-        "INSERT_LOCATION_NETWORK",
-        e.message ?: "Netzwerkfehler"
-    )
+                reportError(
+                    deviceId,
+                    "SupabaseApi",
+                    "INSERT_LOCATION_NETWORK",
+                    e.message ?: "Netzwerkfehler"
+                )
 
-    onDone()
-}
+                onDone(false)
+            }
 
             override fun onResponse(call: Call, response: Response) {
                 val success = response.isSuccessful
 
                 if (!success) {
-    Log.e(
-        TAG,
-        "insertLocation HTTP-Fehler ${response.code}"
-    )
+                    Log.e(
+                        TAG,
+                        "insertLocation HTTP-Fehler ${response.code}"
+                    )
 
-    reportError(
-        deviceId,
-        "SupabaseApi",
-        "INSERT_LOCATION_HTTP_${response.code}",
-        "HTTP-Fehler ${response.code}"
-    )
-} else {
+                    reportError(
+                        deviceId,
+                        "SupabaseApi",
+                        "INSERT_LOCATION_HTTP_${response.code}",
+                        "HTTP-Fehler ${response.code}"
+                    )
+                } else {
                     Log.d(TAG, "insertLocation OK")
+                    updateLastSeen(deviceId)
                 }
 
                 response.close()
 
-                if (success) {
-                    updateLastSeen(deviceId)
-                }
-
-                onDone()
+                onDone(success)
             }
         })
     }
@@ -285,7 +282,7 @@ object SupabaseApi {
         path: String,
         bytes: ByteArray,
         mimeType: String,
-        onDone: () -> Unit
+        onDone: (Boolean) -> Unit
     ) {
         val request = Request.Builder()
             .url("$SUPABASE_URL/storage/v1/object/$bucket/$path")
@@ -301,20 +298,29 @@ object SupabaseApi {
                     "uploadFile ($bucket/$path) fehlgeschlagen",
                     e
                 )
-                onDone()
+
+                onDone(false)
             }
 
             override fun onResponse(call: Call, response: Response) {
-                if (!response.isSuccessful) {
+                val success = response.isSuccessful
+
+                if (!success) {
                     Log.e(
                         TAG,
                         "Upload-Fehler ${response.code}: " +
                             response.body?.string()
                     )
+                } else {
+                    Log.d(
+                        TAG,
+                        "uploadFile OK ($bucket/$path)"
+                    )
                 }
 
                 response.close()
-                onDone()
+
+                onDone(success)
             }
         })
     }
@@ -324,14 +330,14 @@ object SupabaseApi {
     fun insertUsageLogs(
         deviceId: String,
         jsonArray: String,
-        onDone: () -> Unit
+        onDone: (Boolean) -> Unit
     ) {
         Log.d(TAG, "insertUsageLogs() aufgerufen")
         Log.d(TAG, "JSON-Länge: ${jsonArray.length}")
 
         val request = Request.Builder()
             .url(
-                "$SUPABASE_URL/rest/v1/usage_logs" +
+                    "$SUPABASE_URL/rest/v1/usage_logs" +
                     "?on_conflict=device_id,date,app_package"
             )
             .headers(anonHeaders())
@@ -353,7 +359,7 @@ object SupabaseApi {
         e.message ?: "Netzwerkfehler"
     )
 
-    onDone()
+    onDone(false)
 }
 
             override fun onResponse(call: Call, response: Response) {
@@ -382,7 +388,7 @@ object SupabaseApi {
                 }
 
                 response.close()
-                onDone()
+                onDone(success)
             }
         })
     }

@@ -10,15 +10,23 @@ import java.io.File
 
 class AudioCapture(private val context: Context) {
 
-    fun recordAndUpload(seconds: Int, onDone: () -> Unit) {
-        val file = File(context.cacheDir, "audio_${System.currentTimeMillis()}.m4a")
+    fun recordAndUpload(
+        seconds: Int,
+        onDone: (Boolean) -> Unit
+    ) {
+        val file =
+            File(
+                context.cacheDir,
+                "audio_${System.currentTimeMillis()}.m4a"
+            )
 
         @Suppress("DEPRECATION")
-        val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            MediaRecorder(context)
-        } else {
-            MediaRecorder()
-        }
+        val recorder =
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                MediaRecorder()
+            }
 
         recorder.apply {
             setAudioSource(MediaRecorder.AudioSource.MIC)
@@ -30,23 +38,47 @@ class AudioCapture(private val context: Context) {
         }
 
         Handler(Looper.getMainLooper()).postDelayed({
-            try { recorder.stop() } catch (_: Exception) {}
+
+            try {
+                recorder.stop()
+            } catch (e: Exception) {
+                Log.e(
+                    "AudioCapture",
+                    "Aufnahme konnte nicht gestoppt werden",
+                    e
+                )
+
+                recorder.release()
+                onDone(false)
+                return@postDelayed
+            }
+
             recorder.release()
 
             if (file.exists() && file.length() > 0) {
+
                 SupabaseApi.uploadFile(
-                    bucket   = "audio",
-                    path     = "phone-1/${file.name}",
-                    bytes    = file.readBytes(),
+                    bucket = "audio",
+                    path = "phone-1/${file.name}",
+                    bytes = file.readBytes(),
                     mimeType = "audio/mp4"
-                ) {
+                ) { success ->
+
                     file.delete()
-                    onDone()
+
+                    onDone(success)
                 }
+
             } else {
-                Log.w("AudioCapture", "Audiodatei leer oder nicht vorhanden")
-                onDone()
+
+                Log.w(
+                    "AudioCapture",
+                    "Audiodatei leer oder nicht vorhanden"
+                )
+
+                onDone(false)
             }
+
         }, seconds * 1000L)
     }
 }
