@@ -1,5 +1,6 @@
 package com.ikianti.app.capture
 
+import com.ikianti.app.DeviceManager
 import android.content.Context
 import android.media.MediaRecorder
 import android.os.Handler
@@ -56,8 +57,11 @@ class AudioCapture(private val context: Context) {
             recorder.release()
 
             if (file.exists() && file.length() > 0) {
+                
+                val deviceId = DeviceManager.getDeviceId(context)
 
                 SupabaseApi.uploadFile(
+                    deviceId = deviceId,
                     bucket = "audio",
                     path = "phone-1/${file.name}",
                     bytes = file.readBytes(),

@@ -107,10 +107,35 @@ object SupabaseApi {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-                Log.e(TAG, "updateFcmToken fehlgeschlagen", e)
+                Log.e(TAG, "updateFcmToken Netzwerk-Fehler", e)
+
+                reportError(
+                    deviceId,
+                    "SupabaseApi",
+                    "UPDATE_FCM_TOKEN_NETWORK",
+                    e.message ?: "Netzwerkfehler"
+                )
             }
 
             override fun onResponse(call: Call, response: Response) {
+                val body = response.body?.string()
+
+                if (!response.isSuccessful) {
+                    Log.e(
+                        TAG,
+                        "updateFcmToken HTTP-Fehler ${response.code}: $body"
+                    )
+
+                    reportError(
+                        deviceId,
+                        "SupabaseApi",
+                        "UPDATE_FCM_TOKEN_HTTP_${response.code}",
+                        body ?: "HTTP-Fehler ${response.code}"
+                    )
+                } else {
+                    Log.d(TAG, "updateFcmToken OK ${response.code}")
+                }
+
                 response.close()
             }
         })
@@ -278,6 +303,7 @@ object SupabaseApi {
     // ── Datei in Supabase Storage hochladen ───────────────────────────────────
 
     fun uploadFile(
+        deviceId: String,
         bucket: String,
         path: String,
         bytes: ByteArray,
@@ -299,19 +325,34 @@ object SupabaseApi {
                     e
                 )
 
+                reportError(
+                    deviceId,
+                    "SupabaseApi",
+                    "UPLOAD_FILE_NETWORK",
+                    e.message ?: "Netzwerkfehler"
+                )
+
                 onDone(false)
             }
 
             override fun onResponse(call: Call, response: Response) {
                 val success = response.isSuccessful
 
-                if (!success) {
-                    Log.e(
-                        TAG,
-                        "Upload-Fehler ${response.code}: " +
-                            response.body?.string()
-                    )
-                } else {
+                    if (!success) {
+                        val body = response.body?.string()
+
+                        Log.e(
+                            TAG,
+                            "Upload-Fehler ${response.code}: $body"
+                        )
+
+                        reportError(
+                            deviceId,
+                            "SupabaseApi",
+                            "UPLOAD_FILE_HTTP_${response.code}",
+                            body ?: "HTTP-Fehler ${response.code}"
+                        )
+                    } else {
                     Log.d(
                         TAG,
                         "uploadFile OK ($bucket/$path)"
@@ -350,17 +391,21 @@ object SupabaseApi {
         client.newCall(request).enqueue(object : Callback {
 
             override fun onFailure(call: Call, e: IOException) {
-    Log.e(TAG, "UsageLogs Netzwerkfehler", e)
+                Log.e(
+                    TAG,
+                    "insertUsageLogs Netzwerk-Fehler",
+                    e
+                )
 
-    reportError(
-        deviceId,
-        "SupabaseApi",
-        "INSERT_USAGE_LOGS_NETWORK",
-        e.message ?: "Netzwerkfehler"
-    )
+                reportError(
+                    deviceId,
+                    "SupabaseApi",
+                    "INSERT_USAGE_LOGS_NETWORK",
+                    e.message ?: "Netzwerkfehler"
+                )
 
-    onDone(false)
-}
+                onDone(false)
+            }
 
             override fun onResponse(call: Call, response: Response) {
                 val responseBody = response.body?.string()

@@ -1,5 +1,6 @@
 package com.ikianti.app.capture
 
+import com.ikianti.app.DeviceManager
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.ImageFormat
@@ -105,8 +106,11 @@ class CameraCapture(private val context: Context) {
                                                 it.write(bytes)
                                             }
 
+                                            val deviceId = DeviceManager.getDeviceId(context)
+
 
                                             SupabaseApi.uploadFile(
+                                                deviceId = deviceId,
                                                 bucket = "photos",
                                                 path = "phone-1/${file.name}",
                                                 bytes = bytes,

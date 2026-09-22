@@ -96,6 +96,7 @@ class LocationTracking(private val context: Context) {
             INTERVAL_MS
         )
             .setMinUpdateIntervalMillis(MIN_UPDATE_INTERVAL_MS)
+            .setMaxUpdateDelayMillis(INTERVAL_MS)
             .setWaitForAccurateLocation(false)
             .build()
 
@@ -422,5 +423,7 @@ class LocationTracking(private val context: Context) {
         lastAcceptedLocation = null
         lastProcessedLocationTime = 0L
         stillstandAnchor = null
-}
-}
+        pendingMovement = null
+        pendingConfirmations = 0
+    }
+}    
