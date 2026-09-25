@@ -1,5 +1,9 @@
 # Setup
 
+Die separate Hybrid-App für das normale Besitzer-Handy ist in
+[OWNER_APP.md](OWNER_APP.md) beschrieben. Die folgenden Android-Schritte
+beziehen sich weiterhin auf das Testhandy.
+
 ## Überblick: Was wofür zuständig ist
 
 | Dienst    | Zweck                                      | Kosten  |
