@@ -1,0 +1,36 @@
+plugins {
+    id("com.android.application")
+}
+
+// Eigene Firebase-App erforderlich; das Testhandy verwendet seine bisherige Konfiguration.
+if (file("google-services.json").exists()) {
+    apply plugin: "com.google.gms.google-services"
+}
+
+android {
+    namespace = "com.ikianti.owner"
+    compileSdk = 36
+    defaultConfig {
+        applicationId = "com.ikianti.owner"
+        minSdk = 26
+        targetSdk = 36
+        versionCode = 1
+        versionName = "0.1"
+        buildConfigField "String", "DASHBOARD_URL", '"https://iki-anti-theft.web.app/"'
+    }
+    buildFeatures { buildConfig = true }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Benötigt für AndroidX-Back-Navigation einschließlich Android-13+-Gesten.
+    implementation("androidx.activity:activity:1.9.3")
+    implementation(platform("com.google.firebase:firebase-bom:33.15.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    implementation("androidx.core:core-ktx:1.16.0")
+    // Herkunftsgebundene Web-Nachrichten statt einer ungeschützten JavaScript-Schnittstelle.
+    implementation("androidx.webkit:webkit:1.12.1")
+}

@@ -120,12 +120,19 @@
 
     import { createClient }  from "https://esm.sh/@supabase/supabase-js@2";
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
     import { setDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
     const supabase   = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const fbApp      = initializeApp(FIREBASE_CONFIG);
-    const messaging  = getMessaging(fbApp);
+    import { setupOwnerPush } from "./owner-push.js";
+    const ownerApp = !!window.IkiOwner || new URLSearchParams(location.search).get("owner_app") === "1";
+    if (ownerApp) {
+      try { setupOwnerPush(supabase); }
+      catch (error) { console.error("Native Push-Einrichtung fehlgeschlagen:", error); }
+    }
+    let messaging;
+    let getToken;
+    let browserPushReady;
     const MAPY_API_KEY = "UjVQ2Tj3fhCTUb5yoRZr-IX3M81qApHJvxQ8QOS6Wz0";
 
     let authToken       = null;
@@ -160,6 +167,36 @@
     
 async function init() {
   try {
+    // Push darf das Laden von Geräten, Karte und Berichten nicht blockieren.
+    void prepareBrowserPush();
+
+    // ── Dashboard ──────────────────────────────────────────────────────
+    initMap();
+await loadDevices();
+startLiveStatusRefresh();
+subscribeLocationUpdates();
+
+
+  } catch (err) {
+    console.error("❌ Dashboard-Initialisierung fehlgeschlagen:", err);
+
+    document.getElementById("status").textContent =
+      `❌ Initialisierung fehlgeschlagen: ${err.message}`;
+  }
+}
+
+
+// Owner-WebViews verwenden ausschließlich natives FCM. Auch der SDK-Import entfällt.
+async function prepareBrowserPush() {
+  if (ownerApp) return false;
+  if (!("Notification" in window) || !("serviceWorker" in navigator)) return false;
+  if (!browserPushReady) browserPushReady = (async () => {
+    try {
+      const sdk = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js");
+      if (!await sdk.isSupported()) return false;
+      messaging = sdk.getMessaging(fbApp);
+      getToken = sdk.getToken;
+      const onMessage = sdk.onMessage;
     // ── Firebase Messaging Service Worker ──────────────────────────────
     if ("serviceWorker" in navigator) {
       console.log("🔧 Registriere Firebase Messaging Service Worker...");
@@ -187,14 +224,9 @@ async function init() {
       document.getElementById("push-banner").style.display = "block";
     }
 
-    // ── Dashboard ──────────────────────────────────────────────────────
-    initMap();
-await loadDevices();
-startLiveStatusRefresh();
-subscribeLocationUpdates();
 
     // ── Foreground Firebase Messages ───────────────────────────────────
-    onMessage(messaging, payload => {
+    if (messaging) onMessage(messaging, payload => {
       console.log("🔔 FCM Nachricht empfangen:", payload);
 
       const title =
@@ -211,17 +243,20 @@ subscribeLocationUpdates();
         `🔔 ${title}: ${body}`;
     });
 
-  } catch (err) {
-    console.error("❌ Dashboard-Initialisierung fehlgeschlagen:", err);
-
-    document.getElementById("status").textContent =
-      `❌ Initialisierung fehlgeschlagen: ${err.message}`;
-  }
+      return true;
+    } catch (error) {
+      console.error("Browser-Push nicht verfügbar:", error);
+      browserPushReady = null;
+      return false;
+    }
+  })();
+  return browserPushReady;
 }
-
 
 // ── Web-Push / Firebase Cloud Messaging ────────────────────────────────
 window.registerWebPush = async function () {
+  if (ownerApp) return;
+  if (!await prepareBrowserPush()) return;
   try {
     console.log("🔔 Starte Web-Push-Registrierung...");
 
@@ -328,7 +363,7 @@ window.registerWebPush = async function () {
     );
 
     console.error("Push-Debug:", {
-      notificationPermission: Notification.permission,
+      notificationPermission: window.Notification?.permission ?? "nicht verfügbar",
       vapidKeyPresent: !!VAPID_KEY,
       vapidKeyLength: VAPID_KEY?.length,
       firebaseProjectId: FIREBASE_CONFIG.projectId,
@@ -340,7 +375,7 @@ window.registerWebPush = async function () {
   }
 };
 
-registerWebPush();
+if (!ownerApp) void window.registerWebPush();
 
 window.refreshDashboard = async function () {
   if (!authToken || !selectedDevice) return;
@@ -686,7 +721,8 @@ async function loadDevices() {
   }).join("");
 
   // Erstes Gerät automatisch auswählen
-  selectDevice(allDevices[0].id);
+  const requestedDevice = new URLSearchParams(location.search).get("device_id");
+  selectDevice(allDevices.some(d => d.id === requestedDevice) ? requestedDevice : allDevices[0].id);
 
   // Letzte Standorte aller Geräte auf Karte zeigen
   for (const d of allDevices) {
@@ -1065,11 +1101,16 @@ async function loadUsageStats() {
     // ── Tagesberichte ────────────────────────────────────────────────────────
     async function loadReports() {
       if (!selectedDevice) return;
-      const { data } = await supabase.from("reports")
-        .select("*").eq("device_id", selectedDevice)
-        .order("date", { ascending: false }).limit(7);
+      const requestDevice = selectedDevice;
+      const requested = new URLSearchParams(location.search);
+      const reportDate = requested.get("device_id") === requestDevice ? requested.get("report_date") : null;
+      let query = supabase.from("reports").select("*").eq("device_id", requestDevice);
+      if (reportDate && /^\d{4}-\d{2}-\d{2}$/.test(reportDate)) query = query.eq("date", reportDate);
+      const { data, error } = await query.order("date", { ascending: false }).limit(7);
+      if (selectedDevice !== requestDevice) return;
 
       const list = document.getElementById("reports-list");
+      if (error) { list.textContent = "Berichte konnten nicht geladen werden. Bitte erneut versuchen."; return; }
       if (!data?.length) { list.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Berichte.</em>'; return; }
       const fmt = ts => ts ? new Date(ts).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "–";
       list.innerHTML = data.map(r => `
@@ -1078,6 +1119,7 @@ async function loadUsageStats() {
           ${r.maps_url ? `<a href="${r.maps_url}" target="_blank"> → Route</a>` : ""}
           <div class="report-meta">${fmt(r.first_timestamp)} – ${fmt(r.last_timestamp)} Uhr</div>
         </div>`).join("");
+      if (reportDate) list.scrollIntoView({ behavior: "smooth", block: "center" });
     }
     restoreSession();
   </script>

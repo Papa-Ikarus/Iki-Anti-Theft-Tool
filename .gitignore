@@ -1,6 +1,7 @@
 # Android
 android-app/**/build/
 android-app/.gradle/
+android-app/.kotlin/
 android-app/local.properties
 android-app/**/*.iml
 android-app/.idea/
@@ -9,6 +10,7 @@ android-app/.idea/
 
 # Firebase secrets - NIEMALS committen
 android-app/app/google-services.json
+android-app/owner/google-services.json
 functions/serviceAccountKey.json
 dashboard/firebase-config.js
 .firebaserc
@@ -16,6 +18,7 @@ firebase-debug.log
 
 # Node
 functions/node_modules/
+tools/owner-tests/node_modules/
 npm-debug.log*
 
 # OS

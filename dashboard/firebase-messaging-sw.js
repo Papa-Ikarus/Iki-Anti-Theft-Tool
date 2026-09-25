@@ -4,7 +4,7 @@
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js");
 importScripts("https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging-compat.js");
 
-// TODO: gleiche Firebase-Config wie in index.html eintragen
+// Gleiche öffentliche Firebase-Web-Konfiguration wie im Dashboard.
 firebase.initializeApp({
   apiKey: "AIzaSyAT_Ggfx13HUyiFlRSIMqcPFHnkSI6z9h0",
   authDomain: "iki-anti-theft.firebaseapp.com",
@@ -18,7 +18,10 @@ const messaging = firebase.messaging();
 
 // Notification im Hintergrund empfangen und anzeigen
 messaging.onBackgroundMessage(payload => {
-  const { title, body } = payload.notification;
+  // Firebase zeigt Notification-Payloads bereits selbst an. Nicht erneut anzeigen.
+  if (payload.notification) return;
+  const { title, body } = payload.data || {};
+  if (!title) return;
   const mapsUrl = payload.fcmOptions?.link;
 
   self.registration.showNotification(title, {
