@@ -16,6 +16,7 @@
 // - informiert das Dashboard per FCM
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createReportPushSender } from "./send-push.ts";
 
 const TIME_ZONE = "Europe/Berlin";
 
@@ -167,29 +168,21 @@ Deno.serve(async (req) => {
 
   const { data: ownerData, error: ownerError } = await supabase
     .from("owner")
-    .select("fcm_token")
+    .select("fcm_token, android_fcm_token")
     .eq("id", "dashboard")
     .single();
 
   if (ownerError) {
     console.warn(
       "Dashboard-Owner konnte nicht geladen werden:",
-      ownerError.message,
+      "Owner-Abfrage fehlgeschlagen.",
     );
   }
 
-  const dashboardFcmToken =
-    ownerData?.fcm_token ?? null;
-
-  if (!dashboardFcmToken) {
-    console.warn(
-      "Kein Dashboard-FCM-Token – Push wird übersprungen.",
-    );
-  }
-
-  // Access Token nur einmal erzeugen und für alle Geräte wiederverwenden.
-  let fcmAccessToken: string | null = null;
-  let fcmTokenError: string | null = null;
+  const sendReportPush = createReportPushSender({
+    projectId: Deno.env.get("FIREBASE_PROJECT_ID") ?? "",
+    getAccessToken: getFcmAccessToken,
+  });
 
   // ──────────────────────────────────────────────────────────────────────────
   // 6. Geräte einzeln verarbeiten
@@ -204,6 +197,7 @@ Deno.serve(async (req) => {
     location_count: number;
     report_created: boolean;
     push_sent: boolean;
+    android_push_sent?: boolean;
     error?: string;
   }> = [];
 
@@ -367,96 +361,11 @@ const topApps =
       // Dashboard-Push
       // ──────────────────────────────────────────────────────────────────────
 
-      if (dashboardFcmToken) {
-        try {
-          if (!fcmAccessToken && !fcmTokenError) {
-            try {
-              fcmAccessToken =
-                await getFcmAccessToken();
-            } catch (err) {
-              fcmTokenError =
-                err instanceof Error
-                  ? err.message
-                  : String(err);
-
-              console.error(
-                "FCM Access Token konnte nicht erstellt werden:",
-                fcmTokenError,
-              );
-            }
-          }
-
-          if (fcmAccessToken) {
-            const projectId =
-              Deno.env.get("FIREBASE_PROJECT_ID");
-
-            if (!projectId) {
-              throw new Error(
-                "FIREBASE_PROJECT_ID ist nicht konfiguriert.",
-              );
-            }
-
-            const fcmResponse = await fetch(
-              `https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization:
-                    `Bearer ${fcmAccessToken}`,
-                  "Content-Type":
-                    "application/json",
-                },
-                body: JSON.stringify({
-                  message: {
-                    token: dashboardFcmToken,
-
-                    notification: {
-                      title,
-                      body,
-                    },
-
-                    webpush: {
-                      notification: {
-                        title,
-                        body,
-                        requireInteraction: true,
-                      },
-
-                      fcm_options: mapsUrl
-                        ? {
-                            link: mapsUrl,
-                          }
-                        : {},
-                    },
-                  },
-                }),
-              },
-            );
-
-            if (!fcmResponse.ok) {
-              const fcmErrorText =
-                await fcmResponse.text();
-
-              throw new Error(
-                `FCM HTTP ${fcmResponse.status}: ${fcmErrorText}`,
-              );
-            }
-
-            pushSent = true;
-
-            console.log(
-              `FCM Push für ${deviceId} erfolgreich gesendet.`,
-            );
-          }
-        } catch (err) {
-          console.error(
-            `FCM-Fehler für ${deviceId}:`,
-            err instanceof Error
-              ? err.message
-              : err,
-          );
-        }
-      }
+      const pushResults = await sendReportPush(ownerData ?? {}, {
+        deviceId, date: reportDate, title, body, mapsUrl: mapsUrl ?? "",
+      });
+      // Bestehendes Ergebnisfeld bezeichnet weiterhin den Web-Push.
+      pushSent = pushResults.web;
 
       processedDevices++;
 
@@ -465,6 +374,7 @@ const topApps =
         location_count: count,
         report_created: reportCreated,
         push_sent: pushSent,
+        android_push_sent: pushResults.android,
       });
 
       console.log(
@@ -848,16 +758,13 @@ async function getFcmAccessToken(): Promise<string> {
         },
         body:
           `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+        signal: AbortSignal.timeout(15000),
       },
     );
 
   if (!response.ok) {
-    const errorText =
-      await response.text();
-
-    throw new Error(
-      `Google OAuth HTTP ${response.status}: ${errorText}`,
-    );
+    if (response.body) await response.body.cancel();
+    throw new Error(`Google OAuth HTTP ${response.status}`);
   }
 
   const tokenData =

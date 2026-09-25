@@ -2,3 +2,7 @@
 
 [functions.daily-report]
 verify_jwt = false
+
+[functions.register-owner-push]
+# Der Handler validiert die Sitzung online und prüft die konfigurierte Besitzer-ID.
+verify_jwt = false
