@@ -41,44 +41,6 @@ Wenn der Benutzer eine Änderung selbst durchführen möchte, liefert Codex mög
 
 Read-only-Prüfungen benötigen keine vorherige Freigabe. Destruktive, produktive oder sicherheitsrelevante Aktionen benötigen immer eine gesonderte Bestätigung.
 
-
-## Zusammenarbeit, Eigenarbeit und Freigaben
-
-Der Benutzer möchte Codeänderungen grundsätzlich selbst durchführen. Codex arbeitet daher standardmäßig im **Beratungsmodus**.
-
-### Ohne vorherige Freigabe darf Codex
-
-- Dateien und Code ausschließlich lesend untersuchen,
-- Fehler und mögliche Verbesserungen erklären,
-- konkrete Änderungsschritte nennen,
-- fertige Codeausschnitte oder Patches zum manuellen Übernehmen bereitstellen,
-- erklären, welche Tests anschließend ausgeführt werden sollten.
-
-### Vorher ausdrücklich fragen muss Codex bei
-
-- Änderungen, Erstellung oder Löschung von Dateien,
-- automatischen Formatierungen oder größeren Ersetzungen,
-- Installation oder Aktualisierung von Abhängigkeiten,
-- Ausführung von Builds oder Tests,
-- Git-Commits, Pushes oder Erstellung von Pull Requests,
-- Deployments und Änderungen an Supabase, Firebase, GitHub oder anderen externen Diensten,
-- Zugriff auf produktive Daten, Secrets oder physische Geräte,
-- Einsatz von Subagenten oder anderen kostenintensiven Arbeitsabläufen.
-
-Codex soll vor solchen Aktionen kurz erklären:
-
-1. was genau gemacht werden soll,
-2. warum es erforderlich ist,
-3. welche Dateien oder externen Systeme betroffen sind.
-
-Anschließend wartet Codex auf eine ausdrückliche Freigabe wie „Mach das“, „Führe es aus“ oder „Du darfst die Änderung übernehmen“.
-
-Eine Freigabe gilt nur für die konkret beschriebene Aufgabe. Zusätzliche oder wesentlich weitergehende Arbeiten benötigen eine neue Freigabe.
-
-Wenn der Benutzer eine Änderung selbst durchführen möchte, liefert Codex möglichst kurze, genaue und direkt ausführbare Anweisungen. Codex verwendet keine Subagenten, außer der Benutzer verlangt dies ausdrücklich.
-
-Read-only-Prüfungen benötigen keine vorherige Freigabe. Destruktive, produktive oder sicherheitsrelevante Aktionen benötigen immer eine gesonderte Bestätigung.
-
 ## Projektüberblick
 
 Iki ist ein privates Anti-Theft-System für eigene Android-Geräte. Es darf
