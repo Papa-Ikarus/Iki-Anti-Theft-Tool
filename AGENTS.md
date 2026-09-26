@@ -1,7 +1,46 @@
 # AGENTS.md
 
-Diese Datei gilt für **jede KI** (egal welches Tool), die an diesem Repo
-arbeitet. Bitte vor jeder Änderung lesen und einhalten.
+Diese Datei gilt für jede KI (unabhängig vom verwendeten Tool), die an
+diesem Repository arbeitet. Vor jeder Änderung lesen und einhalten.
+
+
+## Zusammenarbeit, Eigenarbeit und Freigaben
+
+Der Benutzer möchte Codeänderungen grundsätzlich selbst durchführen. Codex arbeitet daher standardmäßig im **Beratungsmodus**.
+
+### Ohne vorherige Freigabe darf Codex
+
+- Dateien und Code ausschließlich lesend untersuchen,
+- Fehler und mögliche Verbesserungen erklären,
+- konkrete Änderungsschritte nennen,
+- fertige Codeausschnitte oder Patches zum manuellen Übernehmen bereitstellen,
+- erklären, welche Tests anschließend ausgeführt werden sollten.
+
+### Vorher ausdrücklich fragen muss Codex bei
+
+- Änderungen, Erstellung oder Löschung von Dateien,
+- automatischen Formatierungen oder größeren Ersetzungen,
+- Installation oder Aktualisierung von Abhängigkeiten,
+- Ausführung von Builds oder Tests,
+- Git-Commits, Pushes oder Erstellung von Pull Requests,
+- Deployments und Änderungen an Supabase, Firebase, GitHub oder anderen externen Diensten,
+- Zugriff auf produktive Daten, Secrets oder physische Geräte,
+- Einsatz von Subagenten oder anderen kostenintensiven Arbeitsabläufen.
+
+Codex soll vor solchen Aktionen kurz erklären:
+
+1. was genau gemacht werden soll,
+2. warum es erforderlich ist,
+3. welche Dateien oder externen Systeme betroffen sind.
+
+Anschließend wartet Codex auf eine ausdrückliche Freigabe wie „Mach das“, „Führe es aus“ oder „Du darfst die Änderung übernehmen“.
+
+Eine Freigabe gilt nur für die konkret beschriebene Aufgabe. Zusätzliche oder wesentlich weitergehende Arbeiten benötigen eine neue Freigabe.
+
+Wenn der Benutzer eine Änderung selbst durchführen möchte, liefert Codex möglichst kurze, genaue und direkt ausführbare Anweisungen. Codex verwendet keine Subagenten, außer der Benutzer verlangt dies ausdrücklich.
+
+Read-only-Prüfungen benötigen keine vorherige Freigabe. Destruktive, produktive oder sicherheitsrelevante Aktionen benötigen immer eine gesonderte Bestätigung.
+
 
 ## Zusammenarbeit, Eigenarbeit und Freigaben
 
@@ -42,70 +81,117 @@ Read-only-Prüfungen benötigen keine vorherige Freigabe. Destruktive, produktiv
 
 ## Projektüberblick
 
-Diebstahlschutz-Tool für ein privates Zweit-Android-Handy. Drei Teile,
-die zusammenspielen:
+Iki ist ein privates Anti-Theft-System für eigene Android-Geräte. Es darf
+nicht als Stalkerware oder zur Überwachung fremder Personen eingesetzt werden.
 
+Die wichtigsten Komponenten sind:
+
+```text
+android-app/app/     App auf dem überwachten Zweithandy
+android-app/owner/   separate Besitzer-App für Tagesbericht-Pushs
+dashboard/           Web-Dashboard, ausgeliefert über Firebase Hosting
+supabase/functions/  Edge Functions für Befehle, Berichte und Owner-Push
+supabase/migrations/ PostgreSQL-Schema, RLS- und Storage-Regeln
+docs/                Setup- und Betriebsdokumentation
+tools/               lokale Prüf- und Hilfsskripte
 ```
-android-app/   Kotlin-App auf dem Zweithandy (Kamera/Audio/Standort-Capture)
-dashboard/     Web-Dashboard (Karte + Steuerbuttons), läuft via Firebase Hosting
-functions/     Cloud Function, die den FCM-Trigger vom Dashboard zum Handy schickt
-docs/          Setup- und sonstige Dokumentation
-```
 
-Kommunikationsfluss: Dashboard → Cloud Function → FCM (data-only push) →
-Android-App → Capture → Upload nach Firestore/Storage → Dashboard zeigt
-Ergebnis live an.
+Firebase wird für Cloud Messaging (FCM) und das Hosting des Dashboards
+verwendet. Persistente Daten, Authentifizierung und Datei-Uploads liegen in
+Supabase.
 
-Details zur Einrichtung stehen in `docs/SETUP.md` – dort nachlesen statt
-Setup-Schritte zu raten oder neu zu erfinden.
+Der Hauptfluss für Fernbefehle ist:
+
+Dashboard → Supabase Edge Function `send-command` → FCM data-only Push →
+Zweithandy-App → Aufnahme/Erfassung → Supabase Database bzw. Storage →
+Dashboard.
+
+Tagesberichte werden durch `daily-report` aus Supabase-Daten erzeugt und per
+Web-Push sowie als data-only FCM-Push an die Besitzer-App gemeldet.
+
+Details zur Einrichtung stehen in `docs/SETUP.md`; die Besitzer-App ist in
+`docs/OWNER_APP.md` beschrieben. Setup-Schritte nicht raten oder duplizieren.
 
 ## Grundregeln
 
-1. **Architektur nicht eigenmächtig ändern.** Wenn eine andere Lösung
-   sinnvoller erscheint (z. B. anderer Cloud-Anbieter statt Firebase,
-   anderes Datenmodell), das als Vorschlag im PR/Commit-Text
-   dokumentieren statt es einfach umzusetzen.
-2. **Bestehende Schnittstellen respektieren:**
-   - FCM-Datenformat: `{ "command": "photo" | "audio" | "location" }`
-   - Firestore-Struktur: `devices/{deviceId}` mit Unterkollektion
-     `locations`; Feld `fcmToken` im Device-Dokument
-   - Storage-Pfade: `devices/{deviceId}/photos/...` und
-     `devices/{deviceId}/audio/...`
-   Wer diese ändert, muss alle drei Teile (App, Function, Dashboard)
-   konsistent mitziehen.
-3. **Keine Secrets committen.** `google-services.json`,
-   `firebase-config.js`, API-Keys, Service-Account-Keys – alles bleibt
-   lokal, ist in `.gitignore` gelistet. Niemals Platzhalter durch echte
-   Werte ersetzen und committen.
-4. **TODOs sind Aufträge, keine Deko.** Wer an einer Datei mit TODO
-   arbeitet, sollte es entweder lösen oder konkretisieren – nicht
-   stillschweigend ignorieren.
-5. **Kommentare und Doku auf Deutsch**, Code (Variablen-/Funktionsnamen)
-   auf Englisch – so ist es aktuell im Projekt durchgängig gehalten.
-6. **Kotlin-Stil:** offizielle Kotlin-Konventionen, 4 Leerzeichen
-   Einrückung, `camelCase` für Funktionen/Variablen, `PascalCase` für
-   Klassen. Keine neuen Abhängigkeiten hinzufügen, ohne sie kurz im
-   Commit zu begründen.
-7. **Sicherheitsrelevantes bevorzugt behandeln.** Dieses Projekt
-   sammelt Kamera-, Mikro- und Standortdaten – Änderungen an
-   Firestore-Regeln, Permissions oder Upload-Zielen immer besonders
-   sorgfältig prüfen und im Commit-Text explizit erwähnen.
-8. **Kleine, nachvollziehbare Commits.** Ein Commit = eine
-   zusammenhängende Änderung. Aussagekräftige Commit-Messages (siehe
-   `CONTRIBUTING.md`).
+1. **Architektur nicht eigenmächtig austauschen.** Grundlegende Änderungen an
+   Backend, Datenmodell, Authentifizierung oder Nachrichtenfluss zuerst als
+   Vorschlag dokumentieren und mit dem Besitzer abstimmen.
+2. **Bestehende Schnittstellen konsistent halten.** Bei Änderungen immer alle
+   betroffenen Komponenten, Tests und Dokumente gemeinsam aktualisieren.
+3. **Keine Geheimnisse committen.** Dazu gehören insbesondere
+   `google-services.json`, Firebase-Service-Account-Daten,
+   `SUPABASE_SERVICE_ROLE_KEY` und `DAILY_REPORT_SECRET`. Öffentliche
+   Client-Konfiguration wie Supabase-URL, Supabase-`anon`-Key oder
+   Firebase-Web-Konfiguration nicht mit serverseitigen Geheimnissen
+   verwechseln. Trotzdem vor jedem Commit auf versehentlich eingefügte
+   private Tokens oder Testschlüssel prüfen.
+4. **TODOs sind Aufträge, keine Deko.** Wer den betroffenen Bereich ändert,
+   löst den TODO oder präzisiert ihn mit einem konkreten nächsten Schritt.
+5. **Kommentare und Dokumentation auf Deutsch, Code-Bezeichner auf Englisch.**
+6. **Kotlin-Stil:** offizielle Kotlin-Konventionen, vier Leerzeichen,
+   `camelCase` für Funktionen/Variablen und `PascalCase` für Klassen. Neue
+   Abhängigkeiten im Commit oder PR begründen.
+7. **Sicherheitsrelevantes bevorzugt behandeln.** Änderungen an Android-
+   Permissions, Supabase-RLS, Storage-Policies, Edge-Function-Authentifizierung,
+   Upload-Zielen oder Push-Token-Verarbeitung besonders sorgfältig prüfen und
+   im PR explizit nennen.
+8. **Kleine, nachvollziehbare Commits.** Ein Commit enthält eine
+   zusammenhängende Änderung. Format und Ablauf stehen in `CONTRIBUTING.md`.
 
-## Was NICHT verändert werden soll ohne Rücksprache
+## Verbindliche Schnittstellen
 
-- Package-Name der Android-App (`com.ikianti.app`)
-- Grundlegendes Berechtigungsmodell (welche Permissions die App anfragt)
-- Der Umstand, dass FCM-Nachrichten "data only" (ohne sichtbare
-  Notification-Payload) verschickt werden
+- Dashboard → `send-command`: JSON mit `deviceId` und `command`.
+- FCM an das Zweithandy: data-only Payload mit `command`.
+- Erlaubte Zweithandy-Befehle: `photo`, `audio`, `location`, `usage`.
+- Die Zweithandy-App verwirft `DAILY_REPORT` und andere unbekannte Befehle;
+  Tagesberichte gehören ausschließlich ins Dashboard und in die Besitzer-App.
+- Tagesbericht an die Besitzer-App: data-only Payload mit
+  `command=DAILY_REPORT`, `device_id` und `date`.
+- Zentrale Supabase-Tabellen: `devices`, `locations`, `usage_logs`, `reports`,
+  `owner` und `error_logs`.
+- Geräte-FCM-Token: `devices.fcm_token`.
+- Owner-Push-Tokens: `owner.fcm_token` für Web und
+  `owner.android_fcm_token` für die Besitzer-App. Die beiden Kanäle nicht
+  vermischen.
+- Private Supabase-Storage-Buckets: `photos` und `audio`. Objektpfade werden
+  vom Zweithandy unterhalb der jeweiligen Buckets geschrieben.
+- `reports` ist pro Kombination aus `date` und `device_id` eindeutig; der
+  Tagesbericht nutzt deshalb ein Upsert.
+
+Wer eine dieser Schnittstellen ändert, muss Android-Apps, Dashboard, Edge
+Functions, Migrationen, Tests und Dokumentation auf Konsistenz prüfen.
+
+## Nicht ohne Rücksprache ändern
+
+- Package-Name der Zweithandy-App (`com.ikianti.app`)
+- grundlegendes Android-Berechtigungsmodell
+- data-only Charakter der FCM-Fernbefehle und der nativen Tagesbericht-Pushs
+- Trennung zwischen Zweithandy-App und Besitzer-App
+- Supabase als persistentes Backend oder Firebase als FCM-Dienst
+- RLS- und Storage-Zugriffsmodell
+
+## Prüfen und testen
+
+- Android-Änderungen mit dem Gradle-Wrapper unter `android-app/` bauen bzw.
+  testen; beide Module (`app` und `owner`) berücksichtigen.
+- Edge-Function-Tests mit Deno nach den Hinweisen in `docs/OWNER_APP.md`
+  ausführen.
+- Dashboard-/Owner-Prüfungen aus `tools/` verwenden, wenn der betroffene
+  Bereich geändert wurde.
+- Wenn ein Test mangels physischem Android-Gerät, Zugangsdaten oder externem
+  Dienst nicht möglich ist, das im PR klar festhalten.
 
 ## Definition of Done
 
-Eine Änderung gilt als fertig, wenn:
-- sie zu den bestehenden Schnittstellen passt (siehe oben)
-- keine Secrets oder Test-Keys im Diff auftauchen
-- `docs/SETUP.md` aktualisiert ist, falls sich der Einrichtungsprozess
-  geändert hat
-- offene TODOs entweder gelöst oder präzisiert wurden
+Eine Änderung ist fertig, wenn:
+
+- sie zu den verbindlichen Schnittstellen passt oder alle betroffenen Stellen
+  konsistent migriert wurden,
+- keine privaten Secrets oder Test-Tokens im Diff stehen,
+- relevante Builds und Tests erfolgreich liefen oder Einschränkungen
+  dokumentiert sind,
+- `docs/SETUP.md`, `docs/OWNER_APP.md`, README und Architektur-Dokumente bei
+  geändertem Verhalten aktualisiert wurden,
+- neue Schemaänderungen als nachvollziehbare Supabase-Migration vorliegen,
+- offene TODOs im geänderten Bereich gelöst oder präzisiert wurden.
