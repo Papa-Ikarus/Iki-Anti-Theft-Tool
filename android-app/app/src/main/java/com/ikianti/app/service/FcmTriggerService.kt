@@ -225,6 +225,14 @@ class FcmTriggerService : FirebaseMessagingService() {
                     return
                 }
 
+        if (command !in VALID_COMMANDS) {
+            Log.w(
+                TAG,
+                "FCM-Befehl nicht für die Zweithandy-App bestimmt: $command"
+            )
+            return
+        }
+
         Log.d(
             TAG,
             "FCM-Befehl empfangen: $command"

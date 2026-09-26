@@ -68,6 +68,8 @@ Details zur Einrichtung stehen in `docs/SETUP.md`; die Besitzer-App ist in
 - Dashboard → `send-command`: JSON mit `deviceId` und `command`.
 - FCM an das Zweithandy: data-only Payload mit `command`.
 - Erlaubte Zweithandy-Befehle: `photo`, `audio`, `location`, `usage`.
+- Die Zweithandy-App verwirft `DAILY_REPORT` und andere unbekannte Befehle;
+  Tagesberichte gehören ausschließlich ins Dashboard und in die Besitzer-App.
 - Tagesbericht an die Besitzer-App: data-only Payload mit
   `command=DAILY_REPORT`, `device_id` und `date`.
 - Zentrale Supabase-Tabellen: `devices`, `locations`, `usage_logs`, `reports`,
