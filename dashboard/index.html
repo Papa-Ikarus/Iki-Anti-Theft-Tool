@@ -677,130 +677,217 @@ async function focusLatestLocation(deviceId) {
   }
 }
 
-    // ── Geräte laden ────────────────────────────────────────────────────────
-async function loadDevices() {
-  const { data } = await supabase.from("devices").select("id, last_seen");
-  allDevices = data ?? [];
+    // ── Live-Gerätestatus ────────────────────────────────────────────────
 
-  const tabs = document.getElementById("device-tabs");
-  if (!allDevices.length) {
-    tabs.innerHTML = '<em style="color:#94a3b8;font-size:13px;">Noch keine Geräte registriert.</em>';
-    return;
-  }
+    function formatAge(timestamp) {
+      if (!timestamp) return "–";
 
-  tabs.innerHTML = allDevices.map((d, i) => {
-    const color = DEVICE_COLORS[i % DEVICE_COLORS.length];
+      const difference = Math.max(0, Date.now() - Number(timestamp));
+      const minutes = Math.floor(difference / 60000);
 
-    const ago = d.last_seen
-      ? Math.round((Date.now() - d.last_seen) / 60000)
-      : null;
+      if (minutes < 1) return "gerade eben";
+      if (minutes < 60) return `vor ${minutes} Min.`;
 
-    const time = ago !== null
-      ? (ago < 60 ? `${ago} Min.` : `${Math.round(ago / 60)} Std.`)
-      : "–";
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `vor ${hours} Std.`;
 
-    // Live-Status anhand von last_seen
-    let statusColor;
-    let statusText;
-
-    if (ago !== null && ago < 2) {
-      statusColor = "#22c55e";
-      statusText = "Online";
-    } else if (ago !== null && ago < 10) {
-      statusColor = "#f59e0b";
-      statusText = "Zuletzt gesehen";
-    } else {
-      statusColor = "#ef4444";
-      statusText = "Offline";
+      const days = Math.floor(hours / 24);
+      return `vor ${days} Tag${days === 1 ? "" : "en"}`;
     }
 
-    return `<button class="device-tab" onclick="selectDevice('${d.id}')" id="tab-${d.id}">
-      <span class="device-dot" style="background:${statusColor}"></span>${d.id}<br>
-      <span class="device-status" style="font-size:11px;opacity:.7">${statusText} · zuletzt: ${time}</span>
-    </button>`;
-  }).join("");
+    function formatDateTime(timestamp) {
+      if (!timestamp) return "–";
 
-  // Erstes Gerät automatisch auswählen
-  const requestedDevice = new URLSearchParams(location.search).get("device_id");
-  selectDevice(allDevices.some(d => d.id === requestedDevice) ? requestedDevice : allDevices[0].id);
+      return new Date(Number(timestamp)).toLocaleString("de-DE", {
+        dateStyle: "short",
+        timeStyle: "short"
+      });
+    }
 
-  // Letzte Standorte aller Geräte auf Karte zeigen
-  for (const d of allDevices) {
-    const { data: locs } = await supabase.from("locations")
-      .select("lat, lng").eq("device_id", d.id)
-      .order("timestamp", { ascending: false }).limit(1);
-
-    if (locs?.length) updateMarker(d.id, locs[0].lat, locs[0].lng);
-  }
-}
-// ── Live-Gerätestatus automatisch aktualisieren ───────────────────────
-let liveStatusTimer = null;
-
-function startLiveStatusRefresh() {
-  if (liveStatusTimer) {
-    clearInterval(liveStatusTimer);
-  }
-
-  liveStatusTimer = setInterval(async () => {
-    if (!authToken) return;
-
-    try {
-      const { data, error } = await supabase
-        .from("devices")
-        .select("id, last_seen");
-
-      if (error) throw error;
-
-      const devices = data ?? [];
-
-      for (const d of devices) {
-        const tab = document.getElementById(`tab-${d.id}`);
-        if (!tab) continue;
-
-        const dot = tab.querySelector(".device-dot");
-        const statusElement = tab.querySelector(".device-status");
-
-        const ago = d.last_seen
-          ? Math.round((Date.now() - d.last_seen) / 60000)
-          : null;
-
-        const time = ago !== null
-          ? (ago < 60
-              ? `${ago} Min.`
-              : `${Math.round(ago / 60)} Std.`)
-          : "–";
-
-        let statusColor;
-        let statusText;
-
-        if (ago !== null && ago < 2) {
-          statusColor = "#22c55e";
-          statusText = "Online";
-        } else if (ago !== null && ago < 10) {
-          statusColor = "#f59e0b";
-          statusText = "Zuletzt gesehen";
-        } else {
-          statusColor = "#ef4444";
-          statusText = "Offline";
-        }
-
-        if (dot) {
-          dot.style.background = statusColor;
-        }
-
-        if (statusElement) {
-          statusElement.textContent =
-            `${statusText} · zuletzt: ${time}`;
-        }
+    function getDeviceStatus(lastSeen) {
+      if (!lastSeen) {
+        return {
+          color: "#ef4444",
+          text: "Offline"
+        };
       }
 
-      allDevices = devices;
+      const minutes = Math.max(
+        0,
+        (Date.now() - Number(lastSeen)) / 60000
+      );
 
-    } catch (err) {
-      console.error("❌ Live-Status Aktualisierung fehlgeschlagen:", err);
+      if (minutes < 2) {
+        return {
+          color: "#22c55e",
+          text: "Online"
+        };
+      }
+
+      if (minutes < 10) {
+        return {
+          color: "#eab308",
+          text: "Kürzlich gesehen"
+        };
+      }
+
+      if (minutes < 60) {
+        return {
+          color: "#f97316",
+          text: "Länger nicht gesehen"
+        };
+      }
+
+      return {
+        color: "#ef4444",
+        text: "Offline"
+      };
     }
-  }, 60000);
-}
+
+    function renderDeviceTabs() {
+      const tabs = document.getElementById("device-tabs");
+
+      if (!allDevices.length) {
+        tabs.innerHTML =
+          '<em style="color:#94a3b8;font-size:13px;">Noch keine Geräte registriert.</em>';
+        return;
+      }
+
+      tabs.innerHTML = allDevices.map((device, index) => {
+        const status = getDeviceStatus(device.last_seen);
+        const active = device.id === selectedDevice ? " active" : "";
+
+        return `
+          <button
+            class="device-tab${active}"
+            onclick="selectDevice('${device.id}')"
+            id="tab-${device.id}"
+          >
+            <span
+              class="device-dot"
+              style="background:${status.color}"
+            ></span>
+            ${device.id}<br>
+
+            <span
+              class="device-status"
+              style="font-size:11px;opacity:.75"
+            >
+              ${status.text} · ${formatAge(device.last_seen)}
+            </span><br>
+
+            <span style="font-size:10px;opacity:.65">
+              📍 Standort: ${formatAge(device.last_location)}
+            </span><br>
+
+            <span style="font-size:10px;opacity:.65">
+              🔌 Boot: ${formatDateTime(device.last_boot)}
+            </span>
+          </button>
+        `;
+      }).join("");
+    }
+
+    async function loadDevices() {
+      const { data, error } = await supabase
+        .from("devices")
+        .select("id, last_seen, last_boot");
+
+      if (error) {
+        throw error;
+      }
+
+      allDevices = await Promise.all(
+        (data ?? []).map(async device => {
+          const { data: locations, error: locationError } = await supabase
+            .from("locations")
+            .select("lat, lng, timestamp")
+            .eq("device_id", device.id)
+            .order("timestamp", { ascending: false })
+            .limit(1);
+
+          if (locationError) {
+            console.error(
+              `Letzter Standort für ${device.id} konnte nicht geladen werden:`,
+              locationError
+            );
+          }
+
+          const latestLocation = locations?.[0] ?? null;
+
+          if (latestLocation) {
+            updateMarker(
+              device.id,
+              latestLocation.lat,
+              latestLocation.lng
+            );
+          }
+
+          return {
+            ...device,
+            last_location: latestLocation?.timestamp ?? null
+          };
+        })
+      );
+
+      renderDeviceTabs();
+
+      if (!allDevices.length) return;
+
+      const requestedDevice =
+        new URLSearchParams(location.search).get("device_id");
+
+      const nextDevice =
+        allDevices.some(device => device.id === selectedDevice)
+          ? selectedDevice
+          : allDevices.some(device => device.id === requestedDevice)
+            ? requestedDevice
+            : allDevices[0].id;
+
+      selectDevice(nextDevice);
+    }
+
+    // ── Live-Gerätestatus automatisch aktualisieren ──────────────────────
+
+    let liveStatusTimer = null;
+
+    function startLiveStatusRefresh() {
+      if (liveStatusTimer) {
+        clearInterval(liveStatusTimer);
+      }
+
+      liveStatusTimer = setInterval(async () => {
+        if (!authToken) return;
+
+        try {
+          const { data, error } = await supabase
+            .from("devices")
+            .select("id, last_seen, last_boot");
+
+          if (error) throw error;
+
+          const previousDevices = allDevices;
+
+          allDevices = (data ?? []).map(device => {
+            const previous =
+              previousDevices.find(item => item.id === device.id);
+
+            return {
+              ...previous,
+              ...device
+            };
+          });
+
+          renderDeviceTabs();
+        } catch (error) {
+          console.error(
+            "❌ Live-Status-Aktualisierung fehlgeschlagen:",
+            error
+          );
+        }
+      }, 60000);
+    }
+
     window.selectDevice = function (deviceId) {
       selectedDevice = deviceId;
       document.querySelectorAll(".device-tab").forEach(t => t.classList.remove("active"));
@@ -828,8 +915,18 @@ function subscribeLocationUpdates() {
         const {
           device_id,
           lat,
-          lng
+          lng,
+          timestamp
         } = payload.new;
+
+        const device = allDevices.find(
+          item => item.id === device_id
+        );
+
+        if (device) {
+          device.last_location = timestamp;
+          renderDeviceTabs();
+        }
 
         updateMarker(device_id, lat, lng);
 
