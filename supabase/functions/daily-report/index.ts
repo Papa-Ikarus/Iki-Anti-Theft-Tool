@@ -357,6 +357,38 @@ const topApps =
         reportsCreated++;
       }
 
+      if (count === 0) {
+        const { error: reportError } =
+          await supabase
+            .from("reports")
+            .upsert(
+              {
+                date: reportDate,
+                device_id: deviceId,
+                location_count: 0,
+                first_timestamp: null,
+                last_timestamp: null,
+                first_lat: null,
+                first_lng: null,
+                last_lat: null,
+                last_lng: null,
+                maps_url: null,
+              },
+              {
+                onConflict: "date,device_id",
+              },
+            );
+
+        if (reportError) {
+          throw new Error(
+            `Report ohne Standortdaten konnte nicht gespeichert werden: ${reportError.message}`,
+          );
+        }
+
+        reportCreated = true;
+        reportsCreated++;
+      }
+
       // ──────────────────────────────────────────────────────────────────────
       // Dashboard-Push
       // ──────────────────────────────────────────────────────────────────────

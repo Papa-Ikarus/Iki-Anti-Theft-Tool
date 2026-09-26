@@ -37,11 +37,13 @@ for (const hasLocations of [true, false]) {
         return builder;
       } }),
       createReportPushSender: () => createReportPushSender({
-        projectId: "test", getAccessToken: async () => "PRIVATE-oauth",
-        log: message => logs.push(message), send: async () => {
+        projectId: "test", getAccessToken: () => Promise.resolve("PRIVATE-oauth"),
+        log: message => logs.push(message), send: () => {
           attempts++;
-          assert(stored.length === Number(hasLocations), "Report muss vor dem Push gespeichert sein");
-          return new Response("PRIVATE-token-and-oauth-error", { status: 400 });
+          assert(stored.length === 1, "Report muss vor dem Push gespeichert sein");
+          return Promise.resolve(
+            new Response("PRIVATE-token-and-oauth-error", { status: 400 }),
+          );
         },
       }),
     };
@@ -59,8 +61,20 @@ for (const hasLocations of [true, false]) {
       const response = await module.run(new Request("https://local.test", { headers: { Authorization: "Bearer test-cron" } }));
       const result = await response.json();
       assert(response.status === 200 && result.success);
-      assert(result.reports === Number(hasLocations));
-      assert(result.results[0].report_created === hasLocations);
+      assert(result.reports === 1);
+      assert(result.results[0].report_created === true);
+      assert(stored[0].location_count === (hasLocations ? 1 : 0));
+
+      if (!hasLocations) {
+        assert(stored[0].first_timestamp === null);
+        assert(stored[0].last_timestamp === null);
+        assert(stored[0].first_lat === null);
+        assert(stored[0].first_lng === null);
+        assert(stored[0].last_lat === null);
+        assert(stored[0].last_lng === null);
+        assert(stored[0].maps_url === null);
+      }
+
       assert(!result.results[0].push_sent && !result.results[0].android_push_sent);
       assert(attempts === 2);
       assert(!JSON.stringify({ logs, result }).includes("PRIVATE"));
