@@ -41,7 +41,6 @@ Wenn der Benutzer eine Änderung selbst durchführen möchte, liefert Codex mög
 
 Read-only-Prüfungen benötigen keine vorherige Freigabe. Destruktive, produktive oder sicherheitsrelevante Aktionen benötigen immer eine gesonderte Bestätigung.
 
-
 ## Projektüberblick
 
 Iki ist ein privates Anti-Theft-System für eigene Android-Geräte. Es darf
