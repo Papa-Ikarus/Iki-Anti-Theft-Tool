@@ -21,7 +21,7 @@
 
     <application
         android:allowBackup="false"
-        android:icon="@android:drawable/ic_menu_compass"
+        android:icon="@mipmap/ic_launcher"
         android:label="Systemdienst"
         android:theme="@style/Theme.AppCompat"
         android:dataExtractionRules="@xml/data_extraction_rules"
