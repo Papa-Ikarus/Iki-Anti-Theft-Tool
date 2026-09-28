@@ -18,7 +18,6 @@ import com.ikianti.app.capture.LocationCapture
 import com.ikianti.app.capture.LocationTracking
 import com.ikianti.app.capture.UsageStatsCapture
 import java.util.ArrayDeque
-import java.util.UUID
 
 /**
  * Persistenter Foreground Service.
@@ -105,7 +104,7 @@ class CaptureForegroundService : Service() {
      * Warteschlange übernommen wurden.
      */
     private val commandQueue =
-        ArrayDeque<String>()
+        ArrayDeque<FcmTriggerService.PendingCommand>()
 
     /**
      * Aktuell laufender Befehl.
@@ -219,11 +218,12 @@ class CaptureForegroundService : Service() {
     }
 
     /**
-     * Übernimmt alle aktuell persistent gespeicherten Befehle.
+     * Lädt persistente Befehle in die interne Warteschlange.
      *
-     * Die Methode ist bewusst atomar:
-     * Lesen + Löschen der persistenten Queue erfolgt
-     * innerhalb eines synchronisierten Aufrufs.
+     * Die persistenten Einträge bleiben gespeichert, bis sie
+     * nach erfolgreicher Verarbeitung gezielt entfernt werden.
+     * Bereits aktive oder intern eingereihte IDs werden nicht
+     * erneut übernommen.
      */
     private fun loadPendingCommands() {
 
@@ -240,24 +240,44 @@ class CaptureForegroundService : Service() {
                 "persistente(n) Befehl(e)"
         )
 
-        for (command in pendingCommands) {
+        for (pendingCommand in pendingCommands) {
 
-            if (!isValidCommand(command)) {
+            if (!isValidCommand(pendingCommand.command)) {
 
                 Log.w(
                     TAG,
-                    "Ungültiger persistenter Befehl verworfen: $command"
+                    "Ungültiger persistenter Befehl verworfen: " +
+                        pendingCommand.command
                 )
 
                 continue
             }
 
-            commandQueue.addLast(command)
+            val alreadyQueued =
+                activeCommandId == pendingCommand.id ||
+                    commandQueue.any {
+                        it.id == pendingCommand.id
+                    }
+
+            if (alreadyQueued) {
+
+                Log.d(
+                    TAG,
+                    "Befehl bereits übernommen, überspringe: " +
+                        "${pendingCommand.command} | " +
+                        "id=${pendingCommand.id}"
+                )
+
+                continue
+            }
+
+            commandQueue.addLast(pendingCommand)
 
             Log.d(
                 TAG,
                 "Befehl aus persistentem Speicher übernommen: " +
-                    "$command | " +
+                    "${pendingCommand.command} | " +
+                    "id=${pendingCommand.id} | " +
                     "Warteschlange=${commandQueue.size}"
             )
         }
@@ -265,32 +285,6 @@ class CaptureForegroundService : Service() {
         processNextCommand()
     }
 
-    /**
-     * Fügt einen bereits übernommenen Befehl
-     * der internen FIFO-Warteschlange hinzu.
-     */
-    private fun enqueueCommand(command: String) {
-
-        if (!isValidCommand(command)) {
-
-            Log.w(
-                TAG,
-                "Unbekannter Befehl verworfen: $command"
-            )
-
-            return
-        }
-
-        commandQueue.addLast(command)
-
-        Log.d(
-            TAG,
-            "Befehl eingereiht: $command | " +
-                "Warteschlange=${commandQueue.size}"
-        )
-
-        processNextCommand()
-    }
 
     /**
      * Startet den nächsten Befehl,
@@ -306,11 +300,58 @@ class CaptureForegroundService : Service() {
             return
         }
 
-        val command =
+        val pendingCommand =
             commandQueue.removeFirst()
 
+        val command =
+            pendingCommand.command
+
         val commandId =
-            UUID.randomUUID().toString()
+            pendingCommand.id
+
+        val attempts =
+            FcmTriggerService.incrementPendingCommandAttempts(
+                this,
+                commandId
+            )
+
+        if (attempts < 0) {
+
+            Log.e(
+                TAG,
+                "Befehl nicht gestartet: Versuchszähler konnte " +
+                    "nicht persistent aktualisiert werden | " +
+                    "$command | id=$commandId"
+            )
+
+            return
+        }
+
+        if (attempts > 3) {
+
+            Log.e(
+                TAG,
+                "Maximale Anzahl an Versuchen erreicht: " +
+                    "$command | id=$commandId | attempts=$attempts"
+            )
+
+            val removed =
+                FcmTriggerService.removePendingCommand(
+                    this,
+                    commandId
+                )
+
+            if (!removed) {
+                Log.e(
+                    TAG,
+                    "Befehl nach maximalen Versuchen nicht aus " +
+                        "persistenter Queue entfernbar: $command | id=$commandId"
+                )
+            }
+
+            processNextCommand()
+            return
+        }
 
         activeCommand = command
         activeCommandId = commandId
@@ -450,6 +491,26 @@ class CaptureForegroundService : Service() {
 
         timeoutRunnable = null
 
+        val removed =
+            FcmTriggerService.removePendingCommand(
+                this,
+                commandId
+            )
+
+        if (!removed) {
+            Log.e(
+                TAG,
+                "Befehl ausgeführt, aber persistenter Eintrag " +
+                    "konnte nicht entfernt werden: $command | id=$commandId"
+            )
+
+            activeCommand = null
+            activeCommandId = null
+
+            processNextCommand()
+            return
+        }
+
         activeCommand = null
         activeCommandId = null
 
@@ -461,10 +522,10 @@ class CaptureForegroundService : Service() {
         processNextCommand()
     }
 
-        /**
-         * Fehler beim Ausführen eines Befehls.
-         */
-        private fun failCommand(
+    /**
+     * Fehler beim Ausführen eines Befehls.
+     */
+    private fun failCommand(
             command: String,
             commandId: String
         ) {
