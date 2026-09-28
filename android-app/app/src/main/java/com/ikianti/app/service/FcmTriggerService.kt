@@ -10,8 +10,16 @@ import com.google.firebase.messaging.RemoteMessage
 import com.ikianti.app.DeviceManager
 import com.ikianti.app.SupabaseApi
 import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 class FcmTriggerService : FirebaseMessagingService() {
+
+    data class PendingCommand(
+        val id: String,
+        val command: String,
+        val attempts: Int
+    )
 
     companion object {
         private const val TAG = "FcmTriggerService"
@@ -36,13 +44,13 @@ class FcmTriggerService : FirebaseMessagingService() {
         fun savePendingCommand(
             context: Context,
             command: String
-        ) {
+        ): Boolean {
             if (command !in VALID_COMMANDS) {
                 Log.w(
                     TAG,
                     "Ungültigen Befehl nicht speichern: $command"
                 )
-                return
+                return false
             }
 
             val prefs =
@@ -60,20 +68,37 @@ class FcmTriggerService : FirebaseMessagingService() {
             try {
                 val queue = JSONArray(raw)
 
-                queue.put(command)
+                val entry = JSONObject().apply {
+                    put("id", UUID.randomUUID().toString())
+                    put("command", command)
+                    put("attempts", 0)
+                }
 
-                prefs.edit()
-                    .putString(
-                        KEY_COMMAND_QUEUE,
-                        queue.toString()
+                queue.put(entry)
+
+                val saved =
+                    prefs.edit()
+                        .putString(
+                            KEY_COMMAND_QUEUE,
+                            queue.toString()
+                        )
+                        .commit()
+
+                if (!saved) {
+                    Log.e(
+                        TAG,
+                        "Persistenter Befehl konnte nicht gespeichert werden"
                     )
-                    .apply()
+                    return false
+                }
 
                 Log.d(
                     TAG,
                     "Befehl persistent gespeichert: $command | " +
                         "Warteschlange=${queue.length()}"
                 )
+
+                return true
 
             } catch (e: Exception) {
                 Log.e(
@@ -82,37 +107,23 @@ class FcmTriggerService : FirebaseMessagingService() {
                     e
                 )
 
-                /*
-                 * Falls die gespeicherte Queue beschädigt ist,
-                 * mit einer neuen Queue weitermachen.
-                 */
-                val newQueue = JSONArray()
-                newQueue.put(command)
-
-                prefs.edit()
-                    .putString(
-                        KEY_COMMAND_QUEUE,
-                        newQueue.toString()
-                    )
-                    .apply()
+                return false
             }
         }
 
         /**
-         * Holt ALLE aktuell gespeicherten Befehle atomar aus der
-         * persistenten Queue und leert diese anschließend.
+         * Liest alle aktuell persistent gespeicherten Befehle.
          *
-         * Dadurch bleibt die Reihenfolge erhalten:
+         * Die Einträge bleiben gespeichert, bis sie nach erfolgreicher
+         * Verarbeitung oder nach Erreichen der maximalen Versuchszahl
+         * gezielt anhand ihrer ID entfernt werden.
          *
-         * location -> usage -> location
-         *
-         * wird auch nach einem Service-Neustart genau in dieser
-         * Reihenfolge verarbeitet.
+         * Die gespeicherte Reihenfolge bleibt erhalten.
          */
         @Synchronized
         fun takePendingCommands(
             context: Context
-        ): List<String> {
+            ): List<PendingCommand> {
 
             val prefs =
                 context.getSharedPreferences(
@@ -128,28 +139,87 @@ class FcmTriggerService : FirebaseMessagingService() {
 
             try {
                 val queue = JSONArray(raw)
-                val commands = mutableListOf<String>()
+                val commands = mutableListOf<PendingCommand>()
 
                 for (i in 0 until queue.length()) {
-                    val command = queue.getString(i)
+                    val item = queue.opt(i)
 
-                    if (command in VALID_COMMANDS) {
-                        commands.add(command)
-                    } else {
-                        Log.w(
-                            TAG,
-                            "Ungültigen gespeicherten Befehl übersprungen: $command"
-                        )
+                    when (item) {
+
+                        is JSONObject -> {
+                            val id = item.optString("id")
+                            val command = item.optString("command")
+                            val attempts = item.optInt("attempts", 0)
+
+                            if (id.isNotBlank() && command in VALID_COMMANDS) {
+                                commands.add(
+                                    PendingCommand(
+                                        id = id,
+                                        command = command,
+                                        attempts = attempts
+                                    )
+                                )
+                            } else {
+                                Log.w(
+                                    TAG,
+                                    "Ungültigen persistenten Befehl übersprungen"
+                                )
+                            }
+                        }
+
+                        is String -> {
+                            /*
+                             * Kompatibilität mit der bisherigen Queue.
+                             * Alte String-Einträge erhalten beim Lesen eine ID.
+                             */
+                            if (item in VALID_COMMANDS) {
+                                commands.add(
+                                    PendingCommand(
+                                        id = UUID.randomUUID().toString(),
+                                        command = item,
+                                        attempts = 0
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
 
                 /*
-                 * Erst nachdem die Queue gelesen wurde,
-                 * wird sie dauerhaft geleert.
+                 * Die persistente Queue bleibt bestehen, bis ein Befehl
+                 * nach seiner Verarbeitung gezielt entfernt wird.
+                 *
+                 * Gleichzeitig werden eventuell vorhandene alte
+                 * String-Einträge dauerhaft in das neue Format migriert.
                  */
-                prefs.edit()
-                    .remove(KEY_COMMAND_QUEUE)
-                    .apply()
+                val normalizedQueue = JSONArray()
+
+                for (pendingCommand in commands) {
+                    normalizedQueue.put(
+                        JSONObject().apply {
+                            put("id", pendingCommand.id)
+                            put("command", pendingCommand.command)
+                            put("attempts", pendingCommand.attempts)
+                        }
+                    )
+                }
+
+                val saved =
+                    prefs.edit()
+                        .putString(
+                            KEY_COMMAND_QUEUE,
+                            normalizedQueue.toString()
+                        )
+                        .commit()
+
+                if (!saved) {
+                    Log.e(
+                        TAG,
+                        "Normalisierte Befehlsqueue konnte nicht persistent gespeichert werden"
+                    )
+
+                    return emptyList()
+                }
 
                 Log.d(
                     TAG,
@@ -166,34 +236,174 @@ class FcmTriggerService : FirebaseMessagingService() {
                     e
                 )
 
-                prefs.edit()
-                    .remove(KEY_COMMAND_QUEUE)
-                    .apply()
+
 
                 return emptyList()
             }
         }
 
+        @Synchronized
+        fun incrementPendingCommandAttempts(
+            context: Context,
+            commandId: String
+        ): Int {
+            val prefs =
+                context.getSharedPreferences(
+                    PREFS,
+                    Context.MODE_PRIVATE
+                )
+
+            val raw =
+                prefs.getString(
+                    KEY_COMMAND_QUEUE,
+                    "[]"
+                ) ?: "[]"
+
+            try {
+                val queue = JSONArray(raw)
+                var newAttempts = -1
+
+                for (i in 0 until queue.length()) {
+                    val item = queue.optJSONObject(i)
+                        ?: continue
+
+                    if (item.optString("id") == commandId) {
+                        newAttempts =
+                            item.optInt("attempts", 0) + 1
+
+                        item.put(
+                            "attempts",
+                            newAttempts
+                        )
+
+                        break
+                    }
+                }
+
+                if (newAttempts == -1) {
+                    Log.w(
+                        TAG,
+                        "Persistenter Befehl für Versuchszähler nicht gefunden: " +
+                            "id=$commandId"
+                    )
+
+                    return -1
+                }
+
+                val saved =
+                    prefs.edit()
+                        .putString(
+                            KEY_COMMAND_QUEUE,
+                            queue.toString()
+                        )
+                        .commit()
+
+                if (!saved) {
+                    Log.e(
+                        TAG,
+                        "Versuchszähler konnte nicht persistent gespeichert werden: " +
+                            "id=$commandId"
+                    )
+
+                    return -1
+                }
+
+                Log.d(
+                    TAG,
+                    "Versuchszähler aktualisiert: " +
+                        "id=$commandId | attempts=$newAttempts"
+                )
+
+                return newAttempts
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Fehler beim Aktualisieren des Versuchszählers: " +
+                        "id=$commandId",
+                    e
+                )
+
+                return -1
+            }
+        }
+
         /**
-         * Nur für Notfälle/Debugging:
-         * komplette persistente Queue löschen.
+         * Entfernt genau einen persistenten Befehl anhand seiner ID.
+         *
+         * Wird erst aufgerufen, wenn der Befehl endgültig
+         * abgeschlossen wurde.
          */
         @Synchronized
-        fun clearPendingCommands(
-            context: Context
-        ) {
-            context.getSharedPreferences(
-                PREFS,
-                Context.MODE_PRIVATE
-            )
-                .edit()
-                .remove(KEY_COMMAND_QUEUE)
-                .apply()
+        fun removePendingCommand(
+            context: Context,
+            commandId: String
+        ): Boolean {
+            val prefs =
+                context.getSharedPreferences(
+                    PREFS,
+                    Context.MODE_PRIVATE
+                )
 
-            Log.d(
-                TAG,
-                "Persistente Befehlswarteschlange geleert"
-            )
+            val raw =
+                prefs.getString(
+                    KEY_COMMAND_QUEUE,
+                    "[]"
+                ) ?: "[]"
+
+            try {
+                val queue = JSONArray(raw)
+                val remainingQueue = JSONArray()
+
+                for (i in 0 until queue.length()) {
+                    val item = queue.optJSONObject(i)
+
+                    if (item == null) {
+                        continue
+                    }
+
+                    val id = item.optString("id")
+
+                    if (id != commandId) {
+                        remainingQueue.put(item)
+                    }
+                }
+
+                val saved =
+                    prefs.edit()
+                        .putString(
+                            KEY_COMMAND_QUEUE,
+                            remainingQueue.toString()
+                        )
+                        .commit()
+
+                if (!saved) {
+                    Log.e(
+                        TAG,
+                        "Persistenter Befehl konnte nicht entfernt werden: " +
+                            "id=$commandId"
+                    )
+
+                    return false
+                }
+
+                Log.d(
+                    TAG,
+                    "Persistenten Befehl entfernt: id=$commandId | " +
+                        "Warteschlange=${remainingQueue.length()}"
+                )
+                return true
+
+
+
+            } catch (e: Exception) {
+                Log.e(
+                    TAG,
+                    "Fehler beim Entfernen des persistenten Befehls: id=$commandId",
+                    e
+                )
+                return false
+            }
         }
     }
 
@@ -247,10 +457,20 @@ class FcmTriggerService : FirebaseMessagingService() {
          *
          * "Hole die aktuelle persistente Queue ab."
          */
-        savePendingCommand(
-            this,
-            command
-        )
+        val saved =
+            savePendingCommand(
+                this,
+                command
+            )
+
+        if (!saved) {
+            Log.e(
+                TAG,
+                "FCM-Befehl wird nicht ausgeführt, " +
+                    "weil persistentes Speichern fehlgeschlagen ist: $command"
+            )
+            return
+        }
 
         CaptureForegroundService.sendCommand(
             this,
