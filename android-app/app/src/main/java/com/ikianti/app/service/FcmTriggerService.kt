@@ -43,7 +43,8 @@ class FcmTriggerService : FirebaseMessagingService() {
         @Synchronized
         fun savePendingCommand(
             context: Context,
-            command: String
+            command: String,
+            commandId: String = UUID.randomUUID().toString()
         ): Boolean {
             if (command !in VALID_COMMANDS) {
                 Log.w(
@@ -67,9 +68,28 @@ class FcmTriggerService : FirebaseMessagingService() {
 
             try {
                 val queue = JSONArray(raw)
+                for (i in 0 until queue.length()) {
+                    val existing = queue.optJSONObject(i) ?: continue
+
+                    if (existing.optString("id") == commandId) {
+                        if (existing.optString("command") != command) {
+                            Log.w(
+                                TAG,
+                                "Command-ID bereits mit anderem Befehl gespeichert"
+                            )
+                            return false
+                        }
+
+                        Log.d(
+                            TAG,
+                            "Befehl bereits in der persistenten Queue"
+                        )
+                        return true
+                    }
+                }
 
                 val entry = JSONObject().apply {
-                    put("id", UUID.randomUUID().toString())
+                    put("id", commandId)
                     put("command", command)
                     put("attempts", 0)
                 }
@@ -435,6 +455,11 @@ class FcmTriggerService : FirebaseMessagingService() {
                     return
                 }
 
+        val commandId =
+            message.data["command_id"]
+                ?.takeIf { it.isNotBlank() }
+                ?: UUID.randomUUID().toString()
+
         if (command !in VALID_COMMANDS) {
             Log.w(
                 TAG,
@@ -460,7 +485,8 @@ class FcmTriggerService : FirebaseMessagingService() {
         val saved =
             savePendingCommand(
                 this,
-                command
+                command,
+                commandId
             )
 
         if (!saved) {
