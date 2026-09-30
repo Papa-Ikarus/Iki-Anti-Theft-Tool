@@ -338,21 +338,21 @@ object SupabaseApi {
             override fun onResponse(call: Call, response: Response) {
                 val success = response.isSuccessful
 
-                    if (!success) {
-                        val body = response.body?.string()
+                if (!success) {
+                    val body = response.body?.string()
 
-                        Log.e(
-                            TAG,
-                            "Upload-Fehler ${response.code}: $body"
-                        )
+                    Log.e(
+                        TAG,
+                        "Upload-Fehler ${response.code}: $body"
+                    )
 
-                        reportError(
-                            deviceId,
-                            "SupabaseApi",
-                            "UPLOAD_FILE_HTTP_${response.code}",
-                            body ?: "HTTP-Fehler ${response.code}"
-                        )
-                    } else {
+                    reportError(
+                        deviceId,
+                        "SupabaseApi",
+                        "UPLOAD_FILE_HTTP_${response.code}",
+                        body ?: "HTTP-Fehler ${response.code}"
+                    )
+                } else {
                     Log.d(
                         TAG,
                         "uploadFile OK ($bucket/$path)"
