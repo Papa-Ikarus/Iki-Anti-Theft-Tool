@@ -425,6 +425,18 @@ Vor einer stabilen Release-Version:
 * Release-Build erstellen
 * vollständigen End-to-End-Test durchführen
 
+🔔 Remote-Benachrichtigungsverlauf
+
+- NotificationListenerService auf dem geschützten Gerät.
+- Benachrichtigungszugriff wird dort einmal ausdrücklich freigegeben.
+- Erfassung von App, Zeitpunkt, Titel/Absender und – soweit Android ihn bereitstellt – Benachrichtigungstext.
+- Beispiele: WhatsApp, Signal, Telegram, SMS sowie Telefon-/Anrufbenachrichtigungen.
+- Lokale Queue bei fehlendem Internet und spätere Übertragung.
+- Neuer Bereich „Benachrichtigungen“ in Iki Control, sortier- und filterbar nach Gerät/Datum/App.
+- Supabase-Tabelle mit RLS, expliziten GRANTs und Migration, entsprechend unserer Iki-Datenbankregel.
+- Keine Umgehung von App-Schutzmechanismen: Iki verarbeitet nur Informationen, die Android dem autorisierten Notification Listener tatsächlich bereitstellt.
+  
+
 ---
 
 # Entwicklungsprinzipien
