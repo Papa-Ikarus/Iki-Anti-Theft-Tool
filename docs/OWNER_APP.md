@@ -195,3 +195,35 @@ Remote-App wurde auf dem Zweithandy getestet.
 
 Vor einer erneuten Anwendung die Migrationshistorie abgleichen.
 Die bereits angewendete Migration nicht verändern oder erneut ausführen.
+
+## Befehlsverlauf in Iki Control
+
+Unterhalb der Steuerung zeigt „Befehlsverlauf“ die letzten 50 Befehle
+des ausgewählten Geräts, neueste zuerst. Angezeigt werden Befehl,
+Status, Anforderungszeit, gegebenenfalls Abschlussmeldung und Befehls-ID.
+
+Der Verlauf lädt beim Gerätewechsel und lässt sich manuell aktualisieren.
+Bei sichtbarem Dashboard wird er außerdem alle zehn Sekunden aktualisiert.
+Verspätete Antworten für zuvor ausgewählte Geräte werden verworfen.
+
+Die Edge Function `command-history` prüft die Sitzung online und erlaubt
+ausschließlich den konfigurierten Besitzer `IKI_OWNER_USER_ID`.
+Direkter Client-Zugriff auf `commands` bleibt gesperrt.
+Rückmeldetokens, Token-Hashes und freie Fehlertexte werden nicht ausgegeben.
+
+Die angezeigte Abschlusszeit bezeichnet den serverseitigen Eingang
+der Abschlussmeldung. „Gesendet“ bestätigt noch keine Ausführung.
+
+Lokale Prüfungen:
+- Dashboard-JavaScript besteht die Syntaxprüfung.
+- 13 Handler-Testfälle für Autorisierung und sichere Ausgabe erfolgreich.
+- Dashboard-Tests für sichere Textausgabe, Gerätewechsel,
+  Fehleranzeigen und automatische Aktualisierung erfolgreich.
+
+Praktischer Test am 02.10.2026 bestätigt:
+- Vorhandene Befehle werden in Iki Control angezeigt.
+- Ein neuer Standortbefehl wird automatisch als „Erfolgreich“ angezeigt.
+- Gerätewechsel zwischen zwei echten Remote-Geräten mangels zweitem Gerät
+  nicht praktisch getestet; lokal mit simulierten Antworten geprüft.
+
+`command-history` und das Dashboard sind veröffentlicht.

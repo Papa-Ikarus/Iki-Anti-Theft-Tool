@@ -74,6 +74,28 @@
   </div>
 
 <div class="card">
+  <h3>Befehlsverlauf</h3>
+
+  <button
+    type="button"
+    onclick="loadCommandHistory()"
+    style="flex:none;min-width:auto;padding:6px 12px;font-size:13px;"
+  >
+    Verlauf aktualisieren
+  </button>
+
+  <div
+    id="command-history-list"
+    aria-live="polite"
+    style="margin-top:10px;"
+  >
+    <em style="color:#64748b;font-size:13px;">
+      Gerät auswählen…
+    </em>
+  </div>
+</div>
+
+<div class="card">
   <h3>App-Nutzung</h3>
 
   <div style="display:flex;gap:8px;margin-bottom:12px;">
@@ -174,6 +196,7 @@ async function init() {
     initMap();
 await loadDevices();
 startLiveStatusRefresh();
+startCommandHistoryRefresh();
 subscribeLocationUpdates();
 
 
@@ -890,6 +913,7 @@ async function focusLatestLocation(deviceId) {
 
     window.selectDevice = function (deviceId) {
       selectedDevice = deviceId;
+      void window.loadCommandHistory();
       document.querySelectorAll(".device-tab").forEach(t => t.classList.remove("active"));
       document.getElementById(`tab-${deviceId}`)?.classList.add("active");
       document.getElementById("status").textContent = `Gerät: ${deviceId}`;
@@ -944,6 +968,210 @@ function subscribeLocationUpdates() {
     )
     .subscribe();
 }
+
+    // ── Befehlsverlauf ──────────────────────────────────────────────────
+    let commandHistoryRequest = 0;
+    let commandHistoryController = null;
+    let commandHistoryBusy = false;
+    let commandHistoryTimer = null;
+
+    function startCommandHistoryRefresh() {
+      if (commandHistoryTimer !== null) {
+        clearInterval(commandHistoryTimer);
+      }
+
+      commandHistoryTimer = setInterval(() => {
+        if (document.hidden || !selectedDevice) return;
+
+        void window.loadCommandHistory({ quiet: true });
+      }, 10000);
+    }
+
+    function commandHistoryMessage(text) {
+      const list = document.getElementById("command-history-list");
+      list.replaceChildren();
+
+      const message = document.createElement("p");
+      message.style.fontSize = "13px";
+      message.style.color = "#64748b";
+      message.textContent = text;
+      list.append(message);
+    }
+
+    function commandHistoryTime(value) {
+      if (!value) return "–";
+
+      const date = new Date(value);
+      return Number.isNaN(date.getTime())
+        ? "–"
+        : date.toLocaleString("de-DE");
+    }
+
+    window.loadCommandHistory = async function ({ quiet = false } = {}) {
+      if (quiet && commandHistoryBusy) return;
+
+      const requestNumber = ++commandHistoryRequest;
+      const deviceId = selectedDevice;
+
+      commandHistoryController?.abort();
+      commandHistoryController = new AbortController();
+      const controller = commandHistoryController;
+
+      if (!deviceId) {
+        commandHistoryBusy = false;
+        commandHistoryMessage("Gerät auswählen…");
+        return;
+      }
+
+      commandHistoryBusy = true;
+
+      if (!quiet) {
+        commandHistoryMessage("Befehlsverlauf wird geladen…");
+      }
+
+      const isCurrent = () =>
+        requestNumber === commandHistoryRequest &&
+        selectedDevice === deviceId &&
+        !controller.signal.aborted;
+
+      try {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (!isCurrent()) return;
+
+        if (error || !data.session) {
+          commandHistoryMessage("Bitte erneut anmelden.");
+          return;
+        }
+
+        const response = await fetch(
+          `${SUPABASE_URL}/functions/v1/command-history`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${data.session.access_token}`,
+              "apikey": SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({ deviceId }),
+            signal: controller.signal
+          }
+        );
+
+        if (!isCurrent()) return;
+
+        if (!response.ok) {
+          commandHistoryMessage(
+            response.status === 401
+              ? "Bitte erneut anmelden."
+              : response.status === 403
+              ? "Kein Zugriff auf den Befehlsverlauf."
+              : "Befehlsverlauf konnte nicht geladen werden. Bitte erneut versuchen."
+          );
+          return;
+        }
+
+        const payload = await response.json();
+
+        if (!isCurrent()) return;
+
+        if (
+          payload.success !== true ||
+          !Array.isArray(payload.commands) ||
+          payload.commands.length > 50 ||
+          payload.commands.some(item =>
+            !item ||
+            typeof item !== "object" ||
+            item.device_id !== deviceId
+          )
+        ) {
+          throw new Error("Ungültige Verlaufsantwort");
+        }
+
+        if (payload.commands.length === 0) {
+          commandHistoryMessage("Für dieses Gerät sind noch keine Befehle vorhanden.");
+          return;
+        }
+
+        const commandNames = {
+          photo: "Foto",
+          audio: "Audio",
+          location: "Standort",
+          usage: "App-Nutzung"
+        };
+
+        const statusNames = {
+          pending: "Vorbereitet",
+          sent: "Gesendet",
+          received: "Empfangen",
+          running: "Wird ausgeführt",
+          success: "Erfolgreich",
+          error: "Fehlgeschlagen",
+          timeout: "Zeitüberschreitung"
+        };
+
+        const statusColors = {
+          pending: "#475569",
+          sent: "#2563eb",
+          received: "#2563eb",
+          running: "#b45309",
+          success: "#15803d",
+          error: "#b91c1c",
+          timeout: "#b91c1c"
+        };
+
+        const fragment = document.createDocumentFragment();
+
+        for (const command of payload.commands) {
+          const row = document.createElement("div");
+          row.className = "report-item";
+
+          const title = document.createElement("strong");
+          title.textContent = commandNames[command.command] ?? "Befehl";
+
+          const status = document.createElement("span");
+          status.textContent = statusNames[command.status] ?? "Unbekannter Status";
+          status.style.color = statusColors[command.status] ?? "#475569";
+          status.style.marginLeft = "10px";
+
+          const time = document.createElement("div");
+          time.className = "report-meta";
+          time.textContent =
+            `Angefordert: ${commandHistoryTime(command.created_at)}`;
+
+          row.append(title, status, time);
+
+          if (command.finished_at) {
+            const finished = document.createElement("div");
+            finished.className = "report-meta";
+            finished.textContent =
+              `Abschlussmeldung: ${commandHistoryTime(command.finished_at)}`;
+            row.append(finished);
+          }
+
+          const id = document.createElement("div");
+          id.className = "report-meta";
+          id.style.overflowWrap = "anywhere";
+          id.textContent = `Befehls-ID: ${command.id}`;
+          row.append(id);
+
+          fragment.append(row);
+        }
+
+        document.getElementById("command-history-list")
+          .replaceChildren(fragment);
+      } catch (error) {
+        if (!isCurrent()) return;
+
+        commandHistoryMessage(
+          "Befehlsverlauf konnte nicht geladen werden. Bitte erneut versuchen."
+        );
+      } finally {
+        if (requestNumber === commandHistoryRequest) {
+          commandHistoryBusy = false;
+        }
+      }
+    };
 
     // ── Steuerung ───────────────────────────────────────────────────────────
     window.trigger = async function (command) {
