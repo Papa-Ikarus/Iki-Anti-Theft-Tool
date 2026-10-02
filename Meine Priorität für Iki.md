@@ -10,18 +10,18 @@ Ziel ist es, das bestehende System zuerst zu stabilisieren und anschließend sch
 
 # Prioritäten
 
-| Priorität | Bereich                        | Nutzen      | Status          |
-| --------: | ------------------------------ | ----------- | --------------- |
-|         1 | Tagesbericht verbessern        | Sehr hoch   | ⏳               |
-|         2 | Live-Gerätestatus              | Sehr hoch   | 🔜 Als Nächstes |
-|         3 | Standortkarte verbessern       | Hoch        | ⏳               |
-|         4 | Remote-Befehle robuster machen | Hoch        | ⏳               |
-|         5 | FCM-/Geräteverwaltung          | Hoch        | ⏳               |
-|         6 | UsageStats verbessern          | Mittel–hoch | ⏳               |
-|         7 | Sicherheits-/Fehlerprotokoll   | Hoch        | ⏳               |
-|         8 | Dashboard UI/UX                | Mittel      | ⏳               |
-|         9 | Offline-/Reconnect-Handling    | Hoch        | ⏳               |
-|        10 | Aufräumen & Release-Härtung    | Sehr hoch   | ⏳               |
+| Priorität | Bereich | Nutzen | Status |
+| --------: | ------- | ------ | ------ |
+| 1 | Tagesbericht verbessern | Sehr hoch | ⏳ |
+| 2 | Live-Gerätestatus | Sehr hoch | 🟢 Basis umgesetzt |
+| 3 | Standortkarte verbessern | Hoch | 🔜 Bestand prüfen |
+| 4 | Remote-Befehle robuster machen | Hoch | 🟢 Basis umgesetzt |
+| 5 | FCM-/Geräteverwaltung | Hoch | ⏳ |
+| 6 | UsageStats verbessern | Mittel–hoch | ⏳ |
+| 7 | Sicherheits-/Fehlerprotokoll | Hoch | ⏳ |
+| 8 | Dashboard UI/UX | Mittel | 🟡 Teilweise umgesetzt |
+| 9 | Offline-/Reconnect-Handling | Hoch | 🟡 Command-Rückmeldungen umgesetzt |
+| 10 | Aufräumen & Release-Härtung | Sehr hoch | ⏳ |
 
 ---
 
@@ -201,6 +201,31 @@ TIMEOUT
 ```
 
 Dadurch kann das Dashboard anzeigen, ob ein Befehl tatsächlich vom Android-Gerät verarbeitet wurde.
+
+### Bestätigter Stand – 02.10.2026
+
+* Serverseitige Command-ID bleibt in der persistenten Android-Queue erhalten.
+* Sichere Rückmeldungen für Empfang, Ausführung und Abschluss sind umgesetzt.
+* Iki Control zeigt die letzten 50 Befehle des ausgewählten Geräts.
+* Der Verlauf aktualisiert sich bei sichtbarem Dashboard alle zehn Sekunden.
+* Erfolgreiche Standortbefehle und Fehlerabschluss nach drei Versuchen
+  wurden praktisch bestätigt.
+* Offline gespeicherte Abschlussmeldungen werden nach Wiederherstellung
+  der Verbindung übertragen; praktisch bestätigt.
+* Besitzerzugriff, sichere Ausgabe und konkurrierende Statusänderungen
+  wurden lokal getestet.
+
+Noch offen:
+
+* Praktischer Gerätewechsel mit zwei Remote-Geräten.
+* Prozessneustart während eines Offline-Abschlusses.
+* Praktischer Test des endgültigen Timeoutpfads.
+* Vollständige Prüfung aller Befehlsarten.
+* Die geplante Test-Benachrichtigung ist noch nicht umgesetzt.
+* Keine Garantie für exakt einmalige Befehlsausführung.
+
+Die Offline-Queue gilt bisher für Command-Rückmeldungen.
+Offline-Queues für Locations und UsageStats bleiben offen.
 
 ---
 
@@ -492,41 +517,34 @@ Keine wichtigen Datenbankänderungen nur manuell durchführen.
 
 # Aktueller nächster Schritt
 
-## 🔜 Live-Gerätestatus
+## 🔜 Standortkarte – Bestand prüfen
 
-Nach erfolgreichem produktivem `daily-report`-Test wird als nächstes der **Live-Gerätestatus** umgesetzt.
+Live-Gerätestatus und Command-Tracking sind in ihrer Basis umgesetzt.
 
-Dafür sollen zunächst die bereits vorhandenen Daten verwendet werden:
+Als Nächstes wird der vorhandene Standortkarten-Code mit den Anforderungen
+aus Punkt 3 abgeglichen. Bereits vorhandene Funktionen bleiben erhalten.
 
-```text
-devices
-├── id
-├── last_seen
-├── last_boot
-└── created_at
+Danach werden die fehlenden Funktionen gezielt eingeplant, insbesondere
+Tagesauswahl und Route des ausgewählten Tages, soweit noch nicht vorhanden.
 
-locations
-└── timestamp
-```
-
-Erst danach entscheiden wir, ob zusätzliche Android-Daten wie Batterie, Netzwerktyp oder weitere Statusinformationen benötigt werden.
+Offene Tagesbericht- und Release-Härtungstests bleiben bestehen.
 
 ---
 
 # Fortschritt
 
 ```text
-Phase 1  Stabilität          🟡 läuft
-Phase 2  Dashboard           ⏳
-Phase 3  Remote-Steuerung    ⏳
+Phase 1  Stabilität          🟡 offene Tagesberichttests
+Phase 2  Dashboard           🟡 Live-Status-Basis umgesetzt; Standortkarte prüfen
+Phase 3  Remote-Steuerung    🟢 Basis umgesetzt; Härtungstests offen
 Phase 4  FCM/Geräte          ⏳
 Phase 5  UsageStats          🟢 Basis funktioniert
 Phase 6  Sicherheitslog      ⏳
-Phase 7  Dashboard UI/UX     ⏳
-Phase 8  Offline/Reconnect   ⏳
+Phase 7  Dashboard UI/UX     🟡 Befehlsverlauf umgesetzt; weitere Verbesserungen offen
+Phase 8  Offline/Reconnect   🟡 Command-Rückmeldungen umgesetzt; weitere Queues offen
 Phase 9  Release-Härtung     ⏳
 ```
 
 ## Wichtigster nächster Meilenstein
 
-**Produktiven Daily Report erfolgreich durchführen und anschließend den Live-Gerätestatus implementieren.**
+**Standortkarten-Bestand prüfen und die fehlenden Anforderungen aus Punkt 3 konkret einplanen. Offene Tagesbericht- und Härtungstests bleiben bestehen.**
