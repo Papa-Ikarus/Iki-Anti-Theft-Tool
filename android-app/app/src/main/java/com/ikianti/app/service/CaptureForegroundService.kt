@@ -75,25 +75,25 @@ class CaptureForegroundService : Service() {
         Handler(Looper.getMainLooper())
 
     private val heartbeatRunnable = object : Runnable {
+        override fun run() {
+            val deviceId =
+                com.ikianti.app.DeviceManager.getDeviceId(
+                    this@CaptureForegroundService
+                )
 
-    override fun run() {
+            Log.d(TAG, "Heartbeat: last_seen aktualisieren")
 
-        val deviceId =
-            com.ikianti.app.DeviceManager.getDeviceId(this@CaptureForegroundService)
+            com.ikianti.app.SupabaseApi.updateLastSeen(deviceId)
 
-        Log.d(
-            TAG,
-            "Heartbeat: last_seen aktualisieren"
-        )
+            CommandAckQueue.flush(this@CaptureForegroundService)
+            loadPendingCommands()
 
-        com.ikianti.app.SupabaseApi.updateLastSeen(deviceId)
-
-        mainHandler.postDelayed(
-            this,
-            HEARTBEAT_INTERVAL_MS
-        )
+            mainHandler.postDelayed(
+                this,
+                HEARTBEAT_INTERVAL_MS
+            )
+        }
     }
-}    
 
     private lateinit var locationTracking: LocationTracking
 
@@ -115,6 +115,11 @@ class CaptureForegroundService : Service() {
      * Eindeutige ID des aktuell laufenden Befehls.
      */
     private var activeCommandId: String? = null
+
+    private var activePendingCommand:
+        FcmTriggerService.PendingCommand? = null
+
+    private var activeCompletionStatus: String? = null
 
     /**
      * Timeout des aktuell laufenden Befehls.
@@ -225,6 +230,33 @@ class CaptureForegroundService : Service() {
      * Bereits aktive oder intern eingereihte IDs werden nicht
      * erneut übernommen.
      */
+    private fun queueCommandStatus(
+        pendingCommand: FcmTriggerService.PendingCommand,
+        status: String
+    ): Boolean {
+        val deviceId =
+            com.ikianti.app.DeviceManager.getDeviceId(this)
+
+        val saved = CommandAckQueue.enqueue(
+            context = this,
+            deviceId = deviceId,
+            commandId = pendingCommand.id,
+            ackToken = pendingCommand.ackToken,
+            status = status
+        )
+
+        if (!saved) {
+            Log.e(
+                TAG,
+                "Statusmeldung konnte nicht gespeichert werden: $status"
+            )
+            return false
+        }
+
+        CommandAckQueue.flush(this)
+        return true
+    }
+
     private fun loadPendingCommands() {
 
         val pendingCommands =
@@ -271,6 +303,11 @@ class CaptureForegroundService : Service() {
                 continue
             }
 
+            if (!queueCommandStatus(pendingCommand, "received")) {
+                // Bleibt persistent gespeichert; nächster Heartbeat versucht es erneut.
+                continue
+            }
+
             commandQueue.addLast(pendingCommand)
 
             Log.d(
@@ -309,6 +346,15 @@ class CaptureForegroundService : Service() {
         val commandId =
             pendingCommand.id
 
+        if (
+            pendingCommand.attempts < 3 &&
+            !queueCommandStatus(pendingCommand, "running")
+        ) {
+            // Noch nicht ausgeführt und kein Versuch gezählt.
+            commandQueue.addFirst(pendingCommand)
+            return
+        }
+
         val attempts =
             FcmTriggerService.incrementPendingCommandAttempts(
                 this,
@@ -335,6 +381,11 @@ class CaptureForegroundService : Service() {
                     "$command | id=$commandId | attempts=$attempts"
             )
 
+            if (!queueCommandStatus(pendingCommand, "error")) {
+                commandQueue.addFirst(pendingCommand)
+                return
+            }
+
             val removed =
                 FcmTriggerService.removePendingCommand(
                     this,
@@ -355,6 +406,8 @@ class CaptureForegroundService : Service() {
 
         activeCommand = command
         activeCommandId = commandId
+        activePendingCommand = pendingCommand.copy(attempts = attempts)
+        activeCompletionStatus = null
 
         Log.d(
             TAG,
@@ -377,19 +430,27 @@ class CaptureForegroundService : Service() {
         )
 
         val onDone: (CommandResult) -> Unit = { result ->
-            when (result) {
-                CommandResult.SUCCESS -> {
-                    finishCommand(
-                        command = command,
-                        commandId = commandId
-                    )
+            mainHandler.post {
+                if (
+                    activeCommandId != commandId ||
+                    activePendingCommand?.attempts != attempts
+                ) {
+                    return@post
                 }
+                when (result) {
+                    CommandResult.SUCCESS -> {
+                        finishCommand(
+                            command = command,
+                            commandId = commandId
+                        )
+                    }
 
-                CommandResult.ERROR -> {
-                    failCommand(
-                        command = command,
-                        commandId = commandId
-                    )
+                    CommandResult.ERROR -> {
+                        failCommand(
+                            command = command,
+                            commandId = commandId
+                        )
+                    }
                 }
             }
         }
@@ -452,73 +513,96 @@ class CaptureForegroundService : Service() {
             }
 
         } catch (e: Exception) {
+            Log.e(
+                TAG,
+                "Fehler beim Starten des Befehls: $command",
+                e
+            )
 
-        Log.e(
-            TAG,
-            "Fehler beim Starten des Befehls: $command",
-            e
-        )
+            failCommand(
+                command = command,
+                commandId = commandId
+            )
+        }
+    }
 
-        failCommand(
-            command = command,
-            commandId = commandId
-        )
-    }
-    }
 
     /**
      * Erfolgreicher Abschluss eines Befehls.
      */
+
     private fun finishCommand(
         command: String,
-        commandId: String
+        commandId: String,
+        finalStatus: String = "success"
     ) {
-
         if (activeCommandId != commandId) {
-
-            Log.w(
-                TAG,
-                "Verspäteter Callback ignoriert: " +
-                    "$command | id=$commandId"
-            )
-
+            Log.w(TAG, "Verspäteter Abschluss ignoriert: id=$commandId")
             return
         }
+
+        val pendingCommand = activePendingCommand ?: return
+
+        // Der zuerst begonnene Abschluss bleibt maßgeblich.
+        if (
+            activeCompletionStatus != null &&
+            activeCompletionStatus != finalStatus
+        ) {
+            return
+        }
+
+        activeCompletionStatus = finalStatus
 
         timeoutRunnable?.let {
             mainHandler.removeCallbacks(it)
         }
-
         timeoutRunnable = null
 
-        val removed =
-            FcmTriggerService.removePendingCommand(
-                this,
-                commandId
+        val deviceId =
+            com.ikianti.app.DeviceManager.getDeviceId(this)
+
+        val ackSaved = CommandAckQueue.enqueue(
+            context = this,
+            deviceId = deviceId,
+            commandId = commandId,
+            ackToken = pendingCommand.ackToken,
+            status = finalStatus
+        )
+
+        if (!ackSaved) {
+            Log.e(TAG, "Abschlussmeldung konnte nicht gespeichert werden")
+
+            mainHandler.postDelayed(
+                { finishCommand(command, commandId, finalStatus) },
+                5_000L
             )
+            return
+        }
+
+        val removed =
+            FcmTriggerService.removePendingCommand(this, commandId)
 
         if (!removed) {
-            Log.e(
-                TAG,
-                "Befehl ausgeführt, aber persistenter Eintrag " +
-                    "konnte nicht entfernt werden: $command | id=$commandId"
+            Log.e(TAG, "Abgeschlossener Befehl konnte nicht entfernt werden")
+
+            mainHandler.postDelayed(
+                { finishCommand(command, commandId, finalStatus) },
+                5_000L
             )
-
-            activeCommand = null
-            activeCommandId = null
-
-            processNextCommand()
             return
         }
 
         activeCommand = null
         activeCommandId = null
+        activePendingCommand = null
+        activeCompletionStatus = null
 
         Log.d(
             TAG,
-            "Abgeschlossen: $command | id=$commandId"
+            "Abgeschlossen: $command | id=$commandId | status=$finalStatus"
         )
 
+        CommandAckQueue.flush(this)
         processNextCommand()
     }
 
@@ -526,62 +610,53 @@ class CaptureForegroundService : Service() {
      * Fehler beim Ausführen eines Befehls.
      */
     private fun failCommand(
-            command: String,
-            commandId: String
-        ) {
+        command: String,
+        commandId: String
+    ) {
+        handleFailedAttempt(command, commandId, "error")
+    }
 
-            if (activeCommandId != commandId) {
-
-                Log.w(
-                    TAG,
-                    "Verspäteter Fehler-Callback ignoriert: " +
-                        "$command | id=$commandId"
-                )
-
-                return
-            }
-
-            timeoutRunnable?.let {
-                mainHandler.removeCallbacks(it)
-            }
-
-            timeoutRunnable = null
-
-            activeCommand = null
-            activeCommandId = null
-
-            Log.e(
-                TAG,
-                "Fehler: $command | id=$commandId"
-            )
-
-            processNextCommand()
-        }
-    /**
-     * Timeout eines Befehls.
-     */
     private fun handleTimeout(
         command: String,
         commandId: String
     ) {
+        handleFailedAttempt(command, commandId, "timeout")
+    }
 
-        if (activeCommandId != commandId) {
+    private fun handleFailedAttempt(
+        command: String,
+        commandId: String,
+        finalStatus: String
+    ) {
+        if (
+            activeCommandId != commandId ||
+            activeCompletionStatus != null
+        ) {
             return
         }
 
-        Log.w(
-            TAG,
-            "Timeout: $command | id=$commandId"
-        )
+        val pendingCommand = activePendingCommand ?: return
 
+        timeoutRunnable?.let {
+            mainHandler.removeCallbacks(it)
+        }
         timeoutRunnable = null
 
+        if (pendingCommand.attempts >= 3) {
+            finishCommand(command, commandId, finalStatus)
+            return
+        }
+
+        // Noch kein Endstatus: Der Befehl bleibt für einen weiteren Versuch gespeichert.
         activeCommand = null
         activeCommandId = null
+        activePendingCommand = null
+        activeCompletionStatus = null
 
         Log.w(
             TAG,
-            "Befehl wegen Timeout beendet: $command"
+            "Versuch fehlgeschlagen: $command | id=$commandId | " +
+                "attempts=${pendingCommand.attempts} | reason=$finalStatus"
         )
 
         processNextCommand()
@@ -661,7 +736,7 @@ class CaptureForegroundService : Service() {
     }
 
     override fun onDestroy() {
-    mainHandler.removeCallbacks(heartbeatRunnable)
+    mainHandler.removeCallbacksAndMessages(null)
 
     locationTracking.stop()
 
@@ -672,6 +747,8 @@ class CaptureForegroundService : Service() {
     timeoutRunnable = null
     activeCommand = null
     activeCommandId = null
+    activePendingCommand = null
+    activeCompletionStatus = null
 
     commandQueue.clear()
 

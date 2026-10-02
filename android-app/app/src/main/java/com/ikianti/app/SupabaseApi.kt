@@ -141,6 +141,82 @@ object SupabaseApi {
         })
     }
 
+    enum class CommandAckResult {
+        ACCEPTED,
+        RETRY,
+        REJECTED
+    }
+
+    fun sendCommandAck(
+        deviceId: String,
+        commandId: String,
+        ackToken: String,
+        status: String,
+        onDone: (CommandAckResult) -> Unit
+    ) {
+        val validStatuses =
+            setOf("received", "running", "success", "error", "timeout")
+
+        if (
+            status !in validStatuses ||
+            !ackToken.matches(Regex("^[0-9a-f]{64}$"))
+        ) {
+            onDone(CommandAckResult.REJECTED)
+            return
+        }
+
+        val body = JSONObject().apply {
+            put("deviceId", deviceId)
+            put("commandId", commandId)
+            put("status", status)
+        }.toString()
+
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/functions/v1/command-ack")
+            .headers(anonHeaders())
+            .header("X-Command-Ack-Token", ackToken)
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                // Token und Anfrage nicht protokollieren.
+                onDone(CommandAckResult.RETRY)
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                val result = response.use {
+                    val payload = runCatching {
+                        JSONObject(it.body?.string() ?: "{}")
+                    }.getOrNull()
+
+                    when {
+                        it.isSuccessful &&
+                            payload?.optBoolean("success") == true ->
+                            CommandAckResult.ACCEPTED
+
+                        it.isSuccessful ->
+                            CommandAckResult.RETRY
+
+                        it.code == 409 &&
+                            payload?.optString("code") == "ACK_RETRY" ->
+                            CommandAckResult.RETRY
+
+                        it.code == 408 ||
+                            it.code == 429 ||
+                            it.code >= 500 ->
+                            CommandAckResult.RETRY
+
+                        else ->
+                            CommandAckResult.REJECTED
+                    }
+                }
+
+                onDone(result)
+            }
+        })
+    }
+
     // ── Live-Status ───────────────────────────────────────────────────────────
 
     fun updateLastSeen(deviceId: String) {
