@@ -18,7 +18,8 @@ class FcmTriggerService : FirebaseMessagingService() {
     data class PendingCommand(
         val id: String,
         val command: String,
-        val attempts: Int
+        val attempts: Int,
+        val ackToken: String? = null
     )
 
     companion object {
@@ -44,7 +45,8 @@ class FcmTriggerService : FirebaseMessagingService() {
         fun savePendingCommand(
             context: Context,
             command: String,
-            commandId: String = UUID.randomUUID().toString()
+            commandId: String = UUID.randomUUID().toString(),
+            ackToken: String? = null
         ): Boolean {
             if (command !in VALID_COMMANDS) {
                 Log.w(
@@ -92,6 +94,10 @@ class FcmTriggerService : FirebaseMessagingService() {
                     put("id", commandId)
                     put("command", command)
                     put("attempts", 0)
+
+                    ackToken?.let {
+                        put("ack_token", it)
+                    }
                 }
 
                 queue.put(entry)
@@ -169,16 +175,22 @@ class FcmTriggerService : FirebaseMessagingService() {
                         is JSONObject -> {
                             val id = item.optString("id")
                             val command = item.optString("command")
-                            val attempts = item.optInt("attempts", 0)
+                                val attempts = item.optInt("attempts", 0)
+                                val ackToken =
+                                    item.optString("ack_token")
+                                        .takeIf {
+                                            it.matches(Regex("^[0-9a-f]{64}$"))
+                                        }
 
-                            if (id.isNotBlank() && command in VALID_COMMANDS) {
-                                commands.add(
-                                    PendingCommand(
-                                        id = id,
-                                        command = command,
-                                        attempts = attempts
+                                if (id.isNotBlank() && command in VALID_COMMANDS) {
+                                    commands.add(
+                                        PendingCommand(
+                                            id = id,
+                                            command = command,
+                                            attempts = attempts,
+                                            ackToken = ackToken
+                                        )
                                     )
-                                )
                             } else {
                                 Log.w(
                                     TAG,
@@ -220,6 +232,10 @@ class FcmTriggerService : FirebaseMessagingService() {
                             put("id", pendingCommand.id)
                             put("command", pendingCommand.command)
                             put("attempts", pendingCommand.attempts)
+
+                            pendingCommand.ackToken?.let {
+                                put("ack_token", it)
+                            }
                         }
                     )
                 }
@@ -435,10 +451,7 @@ class FcmTriggerService : FirebaseMessagingService() {
             "DEBUG FCM onMessageReceived aufgerufen"
         )
 
-        Log.d(
-            TAG,
-            "DEBUG FCM data=${message.data}"
-        )
+
 
         Log.d(
             TAG,
@@ -459,6 +472,12 @@ class FcmTriggerService : FirebaseMessagingService() {
             message.data["command_id"]
                 ?.takeIf { it.isNotBlank() }
                 ?: UUID.randomUUID().toString()
+
+        val ackToken =
+            message.data["ack_token"]
+                ?.takeIf {
+                    it.matches(Regex("^[0-9a-f]{64}$"))
+                }
 
         if (command !in VALID_COMMANDS) {
             Log.w(
@@ -486,7 +505,8 @@ class FcmTriggerService : FirebaseMessagingService() {
             savePendingCommand(
                 this,
                 command,
-                commandId
+                commandId,
+                ackToken
             )
 
         if (!saved) {

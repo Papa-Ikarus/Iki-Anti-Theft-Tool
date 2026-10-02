@@ -143,3 +143,55 @@ Bei jeder NEUEN Tabelle müssen explizite Data-API-GRANTs sowie RLS und passende
 Policies bewusst geprüft und definiert werden. Nicht auf automatische
 Standardrechte verlassen. Die Owner-Migration erweitert dagegen eine bestehende
 Tabelle und erstellt keine neue Tabelle.
+
+## Android-Rückmeldungen für Remote-Befehle
+
+`send-command` überträgt neben `command_id` einen zufälligen,
+befehlsbezogenen Rückmeldetoken per FCM. Die Datenbank speichert
+ausschließlich dessen SHA-256-Hash und einen Ablaufzeitpunkt nach
+24 Stunden. Tokens dürfen nicht protokolliert werden.
+
+Die Edge Function `command-ack` prüft Token, Gerätezuordnung und
+Ablaufzeit. Direkter Client-Zugriff auf `commands` bleibt gesperrt.
+Statusänderungen erfolgen gegen den aktuell gelesenen Status;
+verspätete Zwischenmeldungen setzen ihn nicht zurück und ein
+Endstatus kann nicht durch einen anderen ersetzt werden.
+
+Android meldet `received`, `running` und abschließend `success`,
+`error` oder `timeout`. Fehler und Timeouts werden erst nach
+Ausschöpfung der maximal drei Ausführungsversuche endgültig gemeldet.
+Nach einem Neustart wird ein bereits ausgeschöpfter Befehl mit
+unbekanntem Ausgang als `error` abgeschlossen.
+
+Rückmeldungen werden vor dem Versand in einer privaten lokalen Queue
+gespeichert. Vorübergehende Versandfehler behalten den Eintrag.
+Der Foreground-Service versucht den Versand beim Heartbeat erneut.
+Endgültig abgelehnte Rückmeldungen werden entfernt.
+Befehle ohne Rückmeldetoken bleiben ausführbar, melden aber keinen Status.
+
+Die Speicherung verwendet private SharedPreferences. Die vorhandenen
+Backup-Regeln schließen diese von Cloud-Backups und Gerätetransfers aus.
+
+### Bestätigter Teststand vom 02.10.2026
+
+- Android-Debug-Build und Lint erfolgreich.
+- 14 lokale Handler-Testfälle erfolgreich, einschließlich falscher
+  Tokens, Gerätezuordnung, Ablaufzeit und konkurrierender Updates.
+- Standortbefehle erreichen `success` mit Empfangs-, Start- und Abschlusszeit.
+- Fehlende Standortdaten führen nach drei Versuchen zu `error`.
+- Offline-Nachversand bestätigt: Ein lokal um 13:01:06 Uhr
+  abgeschlossener Befehl wurde nach Wiederherstellung der Verbindung
+  um 13:02:57 Uhr im Backend abgeschlossen (Europe/Berlin).
+- `finished_at` bezeichnet den serverseitigen Eingang der Abschlussmeldung.
+- Prozessneustart während eines Offline-Abschlusses und der endgültige
+  Timeoutpfad wurden noch nicht praktisch getestet.
+- Eine exakt einmalige Befehlsausführung wird nicht garantiert.
+
+### Deploymentstand
+
+Die Migration `20260930145210_command_ack_token.sql` ist angewendet.
+`command-ack` und `send-command` sind deployt; die aktualisierte
+Remote-App wurde auf dem Zweithandy getestet.
+
+Vor einer erneuten Anwendung die Migrationshistorie abgleichen.
+Die bereits angewendete Migration nicht verändern oder erneut ausführen.

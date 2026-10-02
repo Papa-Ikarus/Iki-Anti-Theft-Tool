@@ -206,6 +206,26 @@ Deno.serve(async (req) => {
 
     // Server-seitige Command-ID erzeugen und Command vor dem Versand speichern
     const commandId = crypto.randomUUID();
+    // Geheimen Rückmeldetoken erzeugen; nur den Hash speichern.
+    const ackToken = Array.from(
+      crypto.getRandomValues(new Uint8Array(32)),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+
+    const ackTokenHash = Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(ackToken),
+        ),
+      ),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+
+    // Zunächst 24 Stunden für Zustellung und spätere Rückmeldungen.
+    const ackTokenExpiresAt = new Date(
+      Date.now() + 24 * 60 * 60 * 1000,
+    ).toISOString();
 
     const { error: commandInsertError } = await supabase
       .from("commands")
@@ -214,6 +234,8 @@ Deno.serve(async (req) => {
         device_id: deviceId,
         command,
         status: "pending",
+        ack_token_hash: ackTokenHash,
+        ack_token_expires_at: ackTokenExpiresAt,
       });
 
     if (commandInsertError) {
@@ -252,7 +274,8 @@ Deno.serve(async (req) => {
           error_code: "FCM_AUTH_FAILED",
           error_message: "FCM-Authentifizierung fehlgeschlagen",
         })
-        .eq("id", commandId);
+        .eq("id", commandId)
+        .eq("status", "pending");
 
       if (commandUpdateError) {
         console.error("Command-Status konnte nicht auf error gesetzt werden:", {
@@ -299,6 +322,7 @@ Deno.serve(async (req) => {
               data: {
                 command,
                 command_id: commandId,
+                ack_token: ackToken,
               },
               android: {
                 priority: "HIGH",
@@ -319,7 +343,8 @@ Deno.serve(async (req) => {
           error_code: "FCM_NETWORK_FAILED",
           error_message: "FCM-Netzwerkfehler",
         })
-        .eq("id", commandId);
+        .eq("id", commandId)
+        .eq("status", "pending");
 
       if (commandUpdateError) {
         console.error("Command-Status konnte nicht auf error gesetzt werden:", {
@@ -361,7 +386,8 @@ Deno.serve(async (req) => {
           sent_at: sentAt,
           updated_at: sentAt,
         })
-        .eq("id", commandId);
+        .eq("id", commandId)
+        .eq("status", "pending");
 
       if (commandUpdateError) {
         console.error("Command-Status konnte nicht auf sent gesetzt werden:", {
@@ -403,7 +429,8 @@ Deno.serve(async (req) => {
         error_code: `FCM_HTTP_${fcmRes.status}`,
         error_message: "FCM-Versand fehlgeschlagen",
       })
-      .eq("id", commandId);
+      .eq("id", commandId)
+      .eq("status", "pending");
 
     if (commandErrorUpdateError) {
       console.error("Command-Status konnte nicht auf error gesetzt werden:", {
