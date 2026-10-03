@@ -14,7 +14,7 @@ Ziel ist es, das bestehende System zuerst zu stabilisieren und anschließend sch
 | --------: | ------- | ------ | ------ |
 | 1 | Tagesbericht verbessern | Sehr hoch | ⏳ |
 | 2 | Live-Gerätestatus | Sehr hoch | 🟢 Basis umgesetzt |
-| 3 | Standortkarte verbessern | Hoch | 🔜 Bestand prüfen |
+| 3 | Standortkarte verbessern | Hoch | 🟢 Tagesansicht umgesetzt |
 | 4 | Remote-Befehle robuster machen | Hoch | 🟢 Basis umgesetzt |
 | 5 | FCM-/Geräteverwaltung | Hoch | ⏳ |
 | 6 | UsageStats verbessern | Mittel–hoch | ⏳ |
@@ -156,6 +156,22 @@ Start
 ```
 
 Google Maps bleibt zusätzlich als externe Routenansicht verfügbar.
+
+### Bestätigter Stand – 03.10.2026
+
+* Tagesauswahl mit Heute-Button umgesetzt.
+* Tagesroute mit Standortpunkten, Start-/Endmarkierung und Zeitstempeln.
+* Punktanzahl sowie erste und letzte Uhrzeit werden angezeigt.
+* Leere Tage entfernen die bisherige Tagesroute.
+* Verspätete Antworten überschreiben keinen neu gewählten Tag oder Geräteverlauf.
+* Standortdaten werden seitenweise geladen.
+* Tagesgrenzen berücksichtigen die lokale Browser-Zeitzone und Zeitumstellungen.
+* Der aktuelle Standortmarker zeigt den gespeicherten Standortzeitpunkt.
+* Lokale Tests, Firebase-Vorschau und produktiver Dashboard-Test erfolgreich.
+
+Noch offen:
+
+* Praktischer Gerätewechsel mit zwei echten Remote-Geräten.
 
 ---
 
@@ -517,17 +533,23 @@ Keine wichtigen Datenbankänderungen nur manuell durchführen.
 
 # Aktueller nächster Schritt
 
-## 🔜 Standortkarte – Bestand prüfen
 
-Live-Gerätestatus und Command-Tracking sind in ihrer Basis umgesetzt.
+## 🔜 Tagesbericht – offenen produktiven Test abschließen
 
-Als Nächstes wird der vorhandene Standortkarten-Code mit den Anforderungen
-aus Punkt 3 abgeglichen. Bereits vorhandene Funktionen bleiben erhalten.
+Live-Gerätestatus, Command-Tracking und Standort-Tagesansicht sind
+in ihrer Basis umgesetzt und produktiv geprüft.
 
-Danach werden die fehlenden Funktionen gezielt eingeplant, insbesondere
-Tagesauswahl und Route des ausgewählten Tages, soweit noch nicht vorhanden.
+Als Nächstes wird der noch offene produktive Tagesbericht-Test aus
+Priorität 1 mit einem vollständigen Tagesdatensatz durchgeführt.
+Berichtsinhalte, Zeitangaben, Route, App-Nutzung und Push-Zustellung
+werden mit den vorhandenen Daten abgeglichen.
 
-Offene Tagesbericht- und Release-Härtungstests bleiben bestehen.
+Erst nach erfolgreicher Prüfung wird die temporäre Funktion
+`test-daily-report` entfernt.
+
+Offene Command-, Gerätewechsel- und Release-Härtungstests bleiben bestehen.
+Danach folgt die Bestandsprüfung der FCM-/Geräteverwaltung aus Punkt 5.
+
 
 ---
 
@@ -535,7 +557,7 @@ Offene Tagesbericht- und Release-Härtungstests bleiben bestehen.
 
 ```text
 Phase 1  Stabilität          🟡 offene Tagesberichttests
-Phase 2  Dashboard           🟡 Live-Status-Basis umgesetzt; Standortkarte prüfen
+Phase 2  Dashboard           🟢 Live-Status-Basis und Standort-Tagesansicht umgesetzt
 Phase 3  Remote-Steuerung    🟢 Basis umgesetzt; Härtungstests offen
 Phase 4  FCM/Geräte          ⏳
 Phase 5  UsageStats          🟢 Basis funktioniert
@@ -547,4 +569,4 @@ Phase 9  Release-Härtung     ⏳
 
 ## Wichtigster nächster Meilenstein
 
-**Standortkarten-Bestand prüfen und die fehlenden Anforderungen aus Punkt 3 konkret einplanen. Offene Tagesbericht- und Härtungstests bleiben bestehen.**
+**Produktiven Tagesbericht mit vollständigem Tagesdatensatz prüfen und danach die temporäre Testfunktion entfernen. Offene Härtungstests bleiben bestehen.**
