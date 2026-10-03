@@ -52,6 +52,41 @@
   <div id="map"></div>
 
   <div class="card">
+    <h3>Standortverlauf</h3>
+
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+      <label for="location-day">Tag:</label>
+
+      <input
+        id="location-day"
+        type="date"
+        style="padding:8px;border:1px solid #cbd5e1;border-radius:8px;"
+      />
+
+      <button
+        id="location-today-btn"
+        type="button"
+        style="flex:none;min-width:auto;padding:8px 12px;"
+      >
+        Heute
+      </button>
+    </div>
+
+    <p style="margin-top:8px;font-size:12px;color:#64748b;">
+      Tagesgrenzen und Uhrzeiten entsprechen der lokalen Zeitzone
+      dieses Browsers.
+    </p>
+
+    <div
+      id="location-history-summary"
+      aria-live="polite"
+      style="margin-top:10px;font-size:13px;color:#475569;"
+    >
+      Gerät auswählen…
+    </div>
+  </div>
+
+  <div class="card">
     <h3>Geräte</h3>
     <div class="device-tabs" id="device-tabs">
       <em style="color:#94a3b8;font-size:13px;">Wird geladen…</em>
@@ -193,8 +228,9 @@ async function init() {
     void prepareBrowserPush();
 
     // ── Dashboard ──────────────────────────────────────────────────────
-    initMap();
-await loadDevices();
+  initMap();
+  setupLocationDay();
+  await loadDevices();
 startLiveStatusRefresh();
 startCommandHistoryRefresh();
 subscribeLocationUpdates();
@@ -457,137 +493,259 @@ window.refreshDashboard = async function () {
       ).addTo(map);
     }
 
+    let locationHistoryRequest = 0;
+    let locationHistoryController = null;
+    let locationHistoryView = null;
+    let locationHistoryZoom = null;
+
+    function clearLocationHistory() {
+      for (const layer of Object.values(routeLayers)) {
+        map.removeLayer(layer);
+      }
+
+      for (const deviceMarkers of Object.values(historyMarkers)) {
+        for (const marker of deviceMarkers) {
+          map.removeLayer(marker);
+        }
+      }
+
+      routeLayers = {};
+      historyMarkers = {};
+    }
+
+    function setupLocationDay() {
+      const input = document.getElementById("location-day");
+      const todayButton = document.getElementById("location-today-btn");
+
+      input.value = getLocalDate();
+
+      input.addEventListener("change", () => {
+        void loadLocationHistory(selectedDevice);
+      });
+
+      todayButton.addEventListener("click", () => {
+        input.value = getLocalDate();
+        void loadLocationHistory(selectedDevice);
+      });
+    }
+
     async function loadLocationHistory(deviceId) {
-  const since = Date.now() - 24 * 60 * 60 * 1000;
+      const requestNumber = ++locationHistoryRequest;
+      const input = document.getElementById("location-day");
+      const summary = document.getElementById("location-history-summary");
+      const day = input.value;
 
-  const { data, error } = await supabase
-    .from("locations")
-    .select("lat, lng, timestamp")
-    .eq("device_id", deviceId)
-    .gte("timestamp", since)
-    .order("timestamp", { ascending: true });
+      locationHistoryController?.abort();
 
-  if (error) {
-    console.error("❌ Standort-Historie konnte nicht geladen werden:", error);
-    return;
-  }
+      const controller = new AbortController();
+      locationHistoryController = controller;
 
-  if (!data || data.length === 0) {
-    console.log("ℹ️ Keine Standort-Historie für Gerät:", deviceId);
-    return;
-  }
+      const isCurrent = () =>
+        requestNumber === locationHistoryRequest &&
+        selectedDevice === deviceId &&
+        input.value === day;
 
-  const deviceIndex = allDevices.findIndex(d => d.id === deviceId);
-  const color =
-    DEVICE_COLORS[
-      deviceIndex >= 0
-        ? deviceIndex % DEVICE_COLORS.length
-        : 0
-    ];
+      if (!deviceId || deviceId !== selectedDevice) {
+        clearLocationHistory();
+        locationHistoryView = null;
+        locationHistoryZoom = null;
+        summary.textContent = "Gerät auswählen…";
+        return;
+      }
 
-  // Alte Route entfernen
-  if (routeLayers[deviceId]) {
-    map.removeLayer(routeLayers[deviceId]);
-    delete routeLayers[deviceId];
-  }
+      const view = JSON.stringify([deviceId, day]);
 
-  // Alte Historienmarker entfernen
-  if (historyMarkers[deviceId]) {
-    historyMarkers[deviceId].forEach(marker => {
-      map.removeLayer(marker);
-    });
-  }
+      // Beim Wechsel sofort die bisherige Tagesroute entfernen.
+      if (locationHistoryView !== view) {
+        clearLocationHistory();
+        locationHistoryView = view;
+        locationHistoryZoom = null;
+      }
 
-  historyMarkers[deviceId] = [];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        summary.textContent = "Bitte einen gültigen Tag auswählen.";
+        return;
+      }
 
-  // Koordinaten für die Route
-  const coords = data.map(p => [p.lat, p.lng]);
+      const [year, month, dayOfMonth] = day.split("-").map(Number);
+      const start = new Date(year, month - 1, dayOfMonth);
 
-  // Route nur bei mindestens 2 Punkten zeichnen
-  if (data.length >= 2) {
-    routeLayers[deviceId] = L.polyline(coords, {
-      color,
-      weight: 3,
-      opacity: 0.7,
-      dashArray: "6,4"
-    }).addTo(map);
-  }
+      if (
+        start.getFullYear() !== year ||
+        start.getMonth() !== month - 1 ||
+        start.getDate() !== dayOfMonth
+      ) {
+        summary.textContent = "Bitte einen gültigen Tag auswählen.";
+        return;
+      }
 
-  // Historienpunkte
-  historyMarkers[deviceId] = data.map(p => {
-    const date = new Date(p.timestamp);
+      // Nächster lokaler Kalendertag: berücksichtigt Sommer-/Winterzeit.
+      const end = new Date(year, month - 1, dayOfMonth + 1);
+      const startTimestamp = start.getTime();
+      const endTimestamp = end.getTime();
 
-    const time = date.toLocaleTimeString("de-DE", {
-      hour: "2-digit",
-      minute: "2-digit"
-    });
+      summary.textContent = "Standortverlauf wird geladen…";
 
-    const dateText = date.toLocaleDateString("de-DE");
+      const timeout = setTimeout(() => controller.abort(), 30000);
 
-    return L.circleMarker([p.lat, p.lng], {
-      radius: 4,
-      color,
-      fillColor: color,
-      fillOpacity: 0.8,
-      weight: 1
-    })
-      .bindPopup(`
-        <strong>📍 Standort</strong><br>
-        🕐 ${dateText} ${time} Uhr<br>
-        📌 ${Number(p.lat).toFixed(5)}, ${Number(p.lng).toFixed(5)}
-      `)
-      .addTo(map);
-  });
+      try {
+        const points = [];
+        const pageSize = 500;
+        let offset = 0;
 
-  // Ersten Standort als Startpunkt markieren
-  const first = data[0];
-  const startDate = new Date(first.timestamp);
+        // Seitenweise laden, damit längere Verläufe vollständig bleiben.
+        while (true) {
+          const { data, error, count } = await supabase
+            .from("locations")
+            .select("lat, lng, timestamp", { count: "exact" })
+            .eq("device_id", deviceId)
+            .gte("timestamp", startTimestamp)
+            .lt("timestamp", endTimestamp)
+            .order("timestamp", { ascending: true })
+            .order("lat", { ascending: true })
+            .order("lng", { ascending: true })
+            .range(offset, offset + pageSize - 1)
+            .abortSignal(controller.signal);
 
-  const startTime = startDate.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+          if (!isCurrent()) return;
+          if (error) throw error;
+          if (!Array.isArray(data)) {
+            throw new Error("Ungültige Standortantwort");
+          }
 
-  const startMarker = L.circleMarker(
-    [first.lat, first.lng],
-    {
-      radius: 7,
-      color: "#16a34a",
-      fillColor: "#16a34a",
-      fillOpacity: 1,
-      weight: 2
+          points.push(...data);
+          offset += data.length;
+
+          if (data.length === 0) break;
+          if (typeof count === "number" && offset >= count) break;
+        }
+
+        const validPoints = points.map(point => ({
+          lat: Number(point.lat),
+          lng: Number(point.lng),
+          timestamp: Number(point.timestamp)
+        }));
+
+        if (
+          validPoints.some(point =>
+            !Number.isFinite(point.lat) ||
+            !Number.isFinite(point.lng) ||
+            !Number.isFinite(point.timestamp) ||
+            Math.abs(point.lat) > 90 ||
+            Math.abs(point.lng) > 180 ||
+            point.timestamp < startTimestamp ||
+            point.timestamp >= endTimestamp
+          )
+        ) {
+          throw new Error("Ungültige Standortdaten");
+        }
+
+        if (!isCurrent()) return;
+
+        clearLocationHistory();
+
+        const dateText = start.toLocaleDateString("de-DE");
+
+        if (validPoints.length === 0) {
+          summary.textContent =
+            `Keine Standortpunkte am ${dateText} für ${deviceId}.`;
+          return;
+        }
+
+        const deviceIndex = allDevices.findIndex(
+          device => device.id === deviceId
+        );
+
+        const color = DEVICE_COLORS[
+          deviceIndex >= 0 ? deviceIndex % DEVICE_COLORS.length : 0
+        ];
+
+        const timeText = point =>
+          new Date(point.timestamp).toLocaleTimeString("de-DE", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+          });
+
+        const addPoint = (point, label, markerColor, radius) => {
+          const popup = document.createElement("div");
+          popup.style.whiteSpace = "pre-line";
+          popup.textContent =
+            `${label}\n` +
+            `${dateText}, ${timeText(point)} Uhr\n` +
+            `${point.lat.toFixed(5)}, ${point.lng.toFixed(5)}`;
+
+          return L.circleMarker([point.lat, point.lng], {
+            radius,
+            color: markerColor,
+            fillColor: markerColor,
+            fillOpacity: 0.9,
+            weight: 2
+          })
+            .bindPopup(popup)
+            .addTo(map);
+        };
+
+        if (validPoints.length >= 2) {
+          routeLayers[deviceId] = L.polyline(
+            validPoints.map(point => [point.lat, point.lng]),
+            {
+              color,
+              weight: 3,
+              opacity: 0.7,
+              dashArray: "6,4"
+            }
+          ).addTo(map);
+        }
+
+        historyMarkers[deviceId] = validPoints.map(point =>
+          addPoint(point, "Standortpunkt", color, 4)
+        );
+
+        const first = validPoints[0];
+        const last = validPoints[validPoints.length - 1];
+
+        if (validPoints.length === 1) {
+          historyMarkers[deviceId].push(
+            addPoint(first, "Start- und Endpunkt", "#16a34a", 7)
+          );
+        } else {
+          historyMarkers[deviceId].push(
+            addPoint(first, "Startpunkt", "#16a34a", 7),
+            addPoint(last, "Endpunkt", "#dc2626", 7)
+          );
+        }
+
+        summary.textContent =
+          `${dateText} · ${deviceId} · ` +
+          `${validPoints.length} Standortpunkt` +
+          `${validPoints.length === 1 ? "" : "e"} · ` +
+          `${timeText(first)} – ${timeText(last)} Uhr`;
+
+        // Beim Geräte-/Tageswechsel anpassen, bei Updates Ansicht erhalten.
+        if (locationHistoryZoom !== view) {
+          const bounds = L.featureGroup(
+            historyMarkers[deviceId]
+          ).getBounds();
+
+          map.fitBounds(bounds, {
+            padding: [30, 30],
+            maxZoom: 17
+          });
+
+          locationHistoryZoom = view;
+        }
+      } catch (error) {
+        if (!isCurrent()) return;
+
+        summary.textContent =
+          "Standortverlauf konnte nicht aktualisiert werden. " +
+          "Eine gegebenenfalls sichtbare Route ist der letzte Ladestand. " +
+          "Bitte erneut versuchen.";
+      } finally {
+        clearTimeout(timeout);
+      }
     }
-  )
-    .bindPopup(`
-      <strong>🟢 Startpunkt</strong><br>
-      🕐 ${startTime} Uhr<br>
-      📌 ${Number(first.lat).toFixed(5)}, ${Number(first.lng).toFixed(5)}
-    `)
-    .addTo(map);
-
-  historyMarkers[deviceId].push(startMarker);
-
-  // Karte nur beim erstmaligen Laden des ausgewählten Geräts anpassen.
-  // Bei späteren Realtime-Updates soll die Karte nicht ständig springen.
-  if (
-    selectedDevice === deviceId &&
-    !map._ikiHistoryInitialized?.[deviceId]
-  ) {
-    const boundsLayer =
-      routeLayers[deviceId] ||
-      L.featureGroup(historyMarkers[deviceId]);
-
-    map.fitBounds(boundsLayer.getBounds(), {
-      padding: [30, 30]
-    });
-
-    if (!map._ikiHistoryInitialized) {
-      map._ikiHistoryInitialized = {};
-    }
-
-    map._ikiHistoryInitialized[deviceId] = true;
-  }
-}
 
 
     function getMarkerIcon(color) {
@@ -643,7 +801,7 @@ async function focusLatestLocation(deviceId) {
     return false;
   }
 
-  updateMarker(deviceId, lat, lng);
+  updateMarker(deviceId, lat, lng, location.timestamp);
 
   map.setView([lat, lng], 17, {
     animate: true
@@ -653,7 +811,7 @@ async function focusLatestLocation(deviceId) {
 
   return true;
 }
-    function updateMarker(deviceId, lat, lng) {
+  function updateMarker(deviceId, lat, lng, timestamp) {
   const deviceIndex = allDevices.findIndex(d => d.id === deviceId);
   const color =
     DEVICE_COLORS[deviceIndex >= 0 ? deviceIndex % DEVICE_COLORS.length : 0];
@@ -661,15 +819,24 @@ async function focusLatestLocation(deviceId) {
   const device = allDevices.find(d => d.id === deviceId);
   const deviceName = device?.id || deviceId;
 
-  const now = new Date().toLocaleString("de-DE", {
-    dateStyle: "short",
-    timeStyle: "short"
-  });
+  const recordedAt =
+    timestamp === null || timestamp === undefined || timestamp === ""
+      ? NaN
+      : Number(timestamp);
+
+  const recordedDate = new Date(recordedAt);
+
+  const recordedTime = Number.isNaN(recordedDate.getTime())
+    ? "Zeitpunkt unbekannt"
+    : recordedDate.toLocaleString("de-DE", {
+        dateStyle: "short",
+        timeStyle: "medium"
+      });
 
   const popup = `
     <strong>📍 Aktueller Standort</strong><br>
     📱 ${deviceName}<br>
-    🕐 ${now} Uhr<br>
+    🕐 ${recordedTime}<br>
     📌 ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}
   `;
 
@@ -687,7 +854,10 @@ async function focusLatestLocation(deviceId) {
 
   // Nur beim aktuell ausgewählten Gerät bewegen,
   // wenn die neue Position außerhalb des sichtbaren Bereichs liegt.
-  if (selectedDevice === deviceId) {
+    if (
+      selectedDevice === deviceId &&
+      document.getElementById("location-day").value === getLocalDate()
+    ) {
     const newPosition = L.latLng(lat, lng);
     const bounds = map.getBounds();
 
@@ -842,7 +1012,8 @@ async function focusLatestLocation(deviceId) {
             updateMarker(
               device.id,
               latestLocation.lat,
-              latestLocation.lng
+              latestLocation.lng,
+              latestLocation.timestamp
             );
           }
 
@@ -920,7 +1091,6 @@ async function focusLatestLocation(deviceId) {
       loadReports();
       loadUsageStats();
       loadLocationHistory(deviceId);
-      if (markers[deviceId]) map.panTo(markers[deviceId].getLatLng());
     };
 
     // ── Echtzeit-Updates ────────────────────────────────────────────────────
@@ -952,7 +1122,7 @@ function subscribeLocationUpdates() {
           renderDeviceTabs();
         }
 
-        updateMarker(device_id, lat, lng);
+        updateMarker(device_id, lat, lng, timestamp);
 
         // Nur die Route des ausgewählten Geräts sofort aktualisieren.
         if (selectedDevice === device_id && !routeLoading[device_id]) {

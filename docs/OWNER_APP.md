@@ -227,3 +227,32 @@ Praktischer Test am 02.10.2026 bestätigt:
   nicht praktisch getestet; lokal mit simulierten Antworten geprüft.
 
 `command-history` und das Dashboard sind veröffentlicht.
+
+## Standortverlauf mit Tagesauswahl
+
+Iki Control zeigt den Standortverlauf des ausgewählten Geräts für
+einen gewählten Kalendertag. Tagesgrenzen und Uhrzeiten entsprechen
+der lokalen Zeitzone des Browsers; Zeitumstellungen werden berücksichtigt.
+
+Die Ansicht enthält:
+- Tagesauswahl und einen Heute-Button
+- chronologisch verbundene Standortpunkte
+- Start- und Endmarkierung
+- Datum, Uhrzeit und Koordinaten beim Anklicken eines Punkts
+- Punktanzahl sowie erste und letzte Uhrzeit
+
+Bei einem Tag ohne Standortpunkte wird die bisherige Tagesroute entfernt.
+Verspätete Antworten überschreiben keinen neu gewählten Tag oder
+Geräteverlauf. Längere Verläufe werden seitenweise geladen.
+
+Der aktuelle Standortmarker zeigt den gespeicherten Standortzeitpunkt.
+Die Google-Maps-Routenlinks in den Tagesberichten bleiben verfügbar.
+
+Lokale Prüfungen für Tagesgrenzen, Zeitumstellung, leere Tage,
+Pagination, Wechsel, Kartenansicht und Fehler sind erfolgreich.
+Der bestehende Befehlsverlauf wurde ebenfalls erfolgreich geprüft.
+
+Praktischer Test im Dashboard steht noch aus.Praktischer Kartentest auf der Firebase-Vorschau erfolgreich:
+Heute, vorhandener und leerer Tag, schneller Tageswechsel sowie
+gespeicherter Zeitstempel des aktuellen Standortmarkers.
+Gerätewechsel mit zwei echten Remote-Geräten weiterhin nicht praktisch getestet.
