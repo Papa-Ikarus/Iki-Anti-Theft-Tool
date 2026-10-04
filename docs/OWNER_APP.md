@@ -252,7 +252,32 @@ Lokale Prüfungen für Tagesgrenzen, Zeitumstellung, leere Tage,
 Pagination, Wechsel, Kartenansicht und Fehler sind erfolgreich.
 Der bestehende Befehlsverlauf wurde ebenfalls erfolgreich geprüft.
 
-Praktischer Test im Dashboard steht noch aus.Praktischer Kartentest auf der Firebase-Vorschau erfolgreich:
+Praktischer Kartentest auf der Firebase-Vorschau und anschließend im produktiven Dashboard erfolgreich:
 Heute, vorhandener und leerer Tag, schneller Tageswechsel sowie
 gespeicherter Zeitstempel des aktuellen Standortmarkers.
 Gerätewechsel mit zwei echten Remote-Geräten weiterhin nicht praktisch getestet.
+
+## Ungültige FCM-Tokens der Remote-Geräte
+
+Bei einem FCM-Fehler mit `UNREGISTERED` leert `send-command` den
+betroffenen Eintrag in `devices.fcm_token`.
+
+Das Update prüft Geräte-ID und den beim Versand verwendeten Token
+gemeinsam. Ein zwischenzeitlich erneuerter Token bleibt erhalten.
+Gerätedatensatz und Verlauf werden nicht gelöscht.
+
+Da die Spalte `NOT NULL` ist, kennzeichnet eine leere Zeichenfolge
+den fehlenden Token. Weitere Befehle werden mit `NO_FCM_TOKEN`
+abgewiesen, bis Android wieder einen Token registriert.
+
+Eine erfolgreiche Bereinigung oder ein inzwischen geänderter Token
+führt zur bisherigen Antwort `FCM_TOKEN_INVALID` mit HTTP 410.
+Bei einem Datenbankfehler wird `FCM_TOKEN_CLEANUP_FAILED` mit HTTP 503
+zurückgegeben. Tokens und freie Datenbankfehlertexte werden nicht geloggt.
+
+`node tools/test-fcm-token-cleanup.cjs` prüft lokal sechs Fälle:
+Bereinigung, zwischenzeitliche Erneuerung, bereits leerer Token,
+fehlendes Zielgerät, übersprungene Bereinigung und Datenbankfehler.
+
+Ein praktischer Test mit einem tatsächlich ungültigen FCM-Token
+steht noch aus.
