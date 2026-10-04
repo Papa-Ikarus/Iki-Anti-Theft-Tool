@@ -12,11 +12,11 @@ Ziel ist es, das bestehende System zuerst zu stabilisieren und anschließend sch
 
 | Priorität | Bereich | Nutzen | Status |
 | --------: | ------- | ------ | ------ |
-| 1 | Tagesbericht verbessern | Sehr hoch | ⏳ |
+| 1 | Tagesbericht verbessern | Sehr hoch | 🟡 Basis produktiv geprüft; Detailtests offen |
 | 2 | Live-Gerätestatus | Sehr hoch | 🟢 Basis umgesetzt |
 | 3 | Standortkarte verbessern | Hoch | 🟢 Tagesansicht umgesetzt |
 | 4 | Remote-Befehle robuster machen | Hoch | 🟢 Basis umgesetzt |
-| 5 | FCM-/Geräteverwaltung | Hoch | ⏳ |
+| 5 | FCM-/Geräteverwaltung | Hoch | 🔜 Bestand prüfen |
 | 6 | UsageStats verbessern | Mittel–hoch | ⏳ |
 | 7 | Sicherheits-/Fehlerprotokoll | Hoch | ⏳ |
 | 8 | Dashboard UI/UX | Mittel | 🟡 Teilweise umgesetzt |
@@ -70,13 +70,23 @@ Beispiel:
 * Brave empfängt die Benachrichtigung.
 * Klick auf die Benachrichtigung öffnet Google Maps.
 * `daily-report` ist erfolgreich deployed.
-* Der echte produktive Tagesbericht muss noch mit einem vollständigen Tagesdatensatz getestet werden.
+* Produktiver Basis-Test am 03.10.2026 bestätigt:
+  Bericht für den 02.10.2026 mit 40 Standortpunkten.
+* Standortanzahl, Zeitspanne 04:47–23:08 Uhr und Google-Maps-Route geprüft.
+* Für den Berichtstag liegen neun App-Nutzungszeilen vor.
+* Cron-Ausführungen um etwa 03:00 Uhr mit HTTP 200 bestätigt.
+* Tagesbericht-Meldungen wurden wahrgenommen; ihre genaue Empfangszeit
+  wurde nicht geprüft. Eine verzögerte Zustellung ist nicht belegt.
+* Detailabgleich der Top-App-Inhalte und weitere Härtungstests bleiben offen.
 
-### Wichtig
+### Temporäre Testfunktion
 
-Die temporäre Funktion `test-daily-report` bleibt bis nach dem erfolgreichen produktiven Test bestehen.
+Am 03.10.2026 geprüft: `test-daily-report` ist weder im Repository
+noch in der Liste der deployten Supabase-Funktionen vorhanden.
+Ein eigener Cronjob dafür existiert laut Besitzer ebenfalls nicht.
 
-Danach wird sie entfernt.
+Es ist keine Löschung erforderlich. Die produktive Funktion
+`daily-report` und ihr täglicher Cronjob bleiben bestehen.
 
 ---
 
@@ -517,13 +527,10 @@ Bestehenden funktionierenden Code bevorzugt erweitern statt komplett neu schreib
 
 ## 4. Produktionscode und Testcode trennen
 
-Temporäre Testfunktionen wie:
+Temporäre Testfunktionen werden nach erfolgreicher Prüfung entfernt,
+sofern sie noch vorhanden sind und nicht mehr benötigt werden.
+Vor einer Entfernung Repository, Deployment und geplante Aufrufe abgleichen.
 
-```text
-test-daily-report
-```
-
-werden nach erfolgreichem Test wieder entfernt.
 
 ## 5. Supabase-Datenbankänderungen als Migration dokumentieren
 
@@ -533,33 +540,30 @@ Keine wichtigen Datenbankänderungen nur manuell durchführen.
 
 # Aktueller nächster Schritt
 
+## 🔜 FCM-/Geräteverwaltung – Bestand prüfen
 
-## 🔜 Tagesbericht – offenen produktiven Test abschließen
+Der produktive Tagesbericht-Basis-Test ist bestätigt.
+Die temporäre Testfunktion ist bereits nicht mehr vorhanden.
 
-Live-Gerätestatus, Command-Tracking und Standort-Tagesansicht sind
-in ihrer Basis umgesetzt und produktiv geprüft.
+Als Nächstes wird die bestehende FCM-/Geräteverwaltung mit Punkt 5
+abgeglichen: Token-Erneuerung, Behandlung ungültiger Tokens,
+Gerätezuordnung und Verhalten bei Reinstallation.
 
-Als Nächstes wird der noch offene produktive Tagesbericht-Test aus
-Priorität 1 mit einem vollständigen Tagesdatensatz durchgeführt.
-Berichtsinhalte, Zeitangaben, Route, App-Nutzung und Push-Zustellung
-werden mit den vorhandenen Daten abgeglichen.
+Vorhandene Funktionen werden zuerst geprüft. Fehlende Funktionen
+und erforderliche Tests werden anschließend konkret eingeplant.
 
-Erst nach erfolgreicher Prüfung wird die temporäre Funktion
-`test-daily-report` entfernt.
-
-Offene Command-, Gerätewechsel- und Release-Härtungstests bleiben bestehen.
-Danach folgt die Bestandsprüfung der FCM-/Geräteverwaltung aus Punkt 5.
-
+Offene Tagesbericht-Detailtests, Command-, Gerätewechsel- und
+Release-Härtungstests bleiben bestehen.
 
 ---
 
 # Fortschritt
 
 ```text
-Phase 1  Stabilität          🟡 offene Tagesberichttests
+Phase 1  Stabilität          🟡 Tagesbericht-Basis produktiv geprüft; Detailtests offen
 Phase 2  Dashboard           🟢 Live-Status-Basis und Standort-Tagesansicht umgesetzt
 Phase 3  Remote-Steuerung    🟢 Basis umgesetzt; Härtungstests offen
-Phase 4  FCM/Geräte          ⏳
+Phase 4  FCM/Geräte          🔜 Bestand prüfen
 Phase 5  UsageStats          🟢 Basis funktioniert
 Phase 6  Sicherheitslog      ⏳
 Phase 7  Dashboard UI/UX     🟡 Befehlsverlauf umgesetzt; weitere Verbesserungen offen
@@ -569,4 +573,5 @@ Phase 9  Release-Härtung     ⏳
 
 ## Wichtigster nächster Meilenstein
 
-**Produktiven Tagesbericht mit vollständigem Tagesdatensatz prüfen und danach die temporäre Testfunktion entfernen. Offene Härtungstests bleiben bestehen.**
+
+**FCM-/Geräteverwaltung prüfen und fehlende Anforderungen aus Punkt 5 konkret einplanen. Offene Detail- und Härtungstests bleiben bestehen.**
