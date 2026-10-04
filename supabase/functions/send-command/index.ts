@@ -487,6 +487,42 @@ Deno.serve(async (req) => {
         deviceId,
       });
 
+      // Nur den tatsächlich verwendeten, ungültigen Token entfernen.
+      // Ein zwischenzeitlich erneuerter Token bleibt erhalten.
+      const { data: clearedDevices, error: clearTokenError } = await supabase
+        .from("devices")
+        .update({ fcm_token: "" })
+        .eq("id", deviceId)
+        .eq("fcm_token", fcmToken)
+        .select("id");
+
+      if (clearTokenError) {
+        console.error("Ungültiger FCM-Token konnte nicht entfernt werden:", {
+          commandId,
+          deviceId,
+          code: clearTokenError.code,
+        });
+
+        return new Response(
+          JSON.stringify({
+            error: "Ungültiger FCM-Token konnte nicht bereinigt werden",
+            code: "FCM_TOKEN_CLEANUP_FAILED",
+            deviceId,
+            commandId,
+          }),
+          {
+            status: 503,
+            headers: corsHeaders,
+          },
+        );
+      }
+
+      console.log("Bereinigung des ungültigen FCM-Tokens abgeschlossen:", {
+        commandId,
+        deviceId,
+        tokenCleared: (clearedDevices?.length ?? 0) > 0,
+      });
+
       return new Response(
         JSON.stringify({
           error: "FCM-Token ist nicht mehr gültig",
