@@ -34,3 +34,9 @@ supabase/.temp/
 # Lokale Entwicklungsdateien
 .vscode/
 android-app/iki-debug-v3.4.ps1
+
+# Local test output
+command-ack-offline-test.log
+
+# Local Supabase CLI state
+supabase/.branches/
