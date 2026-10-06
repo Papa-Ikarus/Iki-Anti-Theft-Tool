@@ -1,7 +1,9 @@
 package com.ikianti.app
 
 import android.content.Context
+import android.util.Base64
 import android.util.Log
+import java.security.SecureRandom
 import java.util.UUID
 
 /**
@@ -17,6 +19,7 @@ object DeviceManager {
     private const val TAG = "DeviceManager"
     private const val PREFS_NAME = "iki_device_prefs"
     private const val KEY_DEVICE_ID = "device_id"
+    private const val KEY_UPLOAD_TOKEN = "upload_token"
 
     fun getDeviceId(context: Context): String {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -30,5 +33,29 @@ object DeviceManager {
         }
 
         return deviceId
+    }
+
+    fun getUploadToken(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+        prefs.getString(KEY_UPLOAD_TOKEN, null)?.let {
+            return it
+        }
+
+        val randomBytes = ByteArray(32)
+        SecureRandom().nextBytes(randomBytes)
+
+        val token = Base64.encodeToString(
+            randomBytes,
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+
+        prefs.edit()
+            .putString(KEY_UPLOAD_TOKEN, token)
+            .apply()
+
+        Log.d(TAG, "Neuer Upload-Token generiert")
+
+        return token
     }
 }

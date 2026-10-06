@@ -88,6 +88,8 @@ class MainActivity : AppCompatActivity() {
 
         val deviceId = DeviceManager.getDeviceId(this)
         Log.d(TAG, "Geräte-ID: $deviceId")
+        
+        DeviceManager.getUploadToken(this)
 
         Firebase.messaging.token.addOnSuccessListener { token ->
             SupabaseApi.upsertDevice(deviceId, token) {

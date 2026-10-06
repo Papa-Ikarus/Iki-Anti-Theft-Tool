@@ -217,6 +217,81 @@ object SupabaseApi {
         })
     }
 
+    // ── Benachrichtigungsereignisse ───────────────────────────────────────────
+
+    fun insertNotificationEvent(
+        deviceId: String,
+        uploadToken: String,
+        appName: String,
+        packageName: String,
+        eventType: String,
+        notificationId: Int?,
+        notificationKey: String?,
+        eventTimestamp: Long,
+        postTimestamp: Long?
+    ) {
+        if (eventType != "posted" && eventType != "removed") {
+            Log.e(TAG, "insertNotificationEvent: ungültiger eventType")
+            return
+        }
+
+        val body = JSONObject().apply {
+            put("deviceId", deviceId)
+            put("appName", appName)
+            put("packageName", packageName)
+            put("eventType", eventType)
+
+            if (notificationId != null) {
+                put("notificationId", notificationId)
+            }
+
+            if (notificationKey != null) {
+                put("notificationKey", notificationKey)
+            }
+
+            put("eventTimestamp", eventTimestamp)
+
+            if (postTimestamp != null) {
+                put("postTimestamp", postTimestamp)
+            }
+        }.toString()
+
+        val request = Request.Builder()
+            .url("$SUPABASE_URL/functions/v1/notification-event")
+            .headers(anonHeaders())
+            .header("X-Device-Token", uploadToken)
+            .post(body.toRequestBody(JSON_MEDIA))
+            .build()
+
+        client.newCall(request).enqueue(object : Callback {
+
+            override fun onFailure(call: Call, e: IOException) {
+                // Upload-Token niemals protokollieren.
+                Log.e(
+                    TAG,
+                    "insertNotificationEvent Netzwerk-Fehler",
+                    e
+                )
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                response.use {
+                    if (!it.isSuccessful) {
+                        Log.e(
+                            TAG,
+                            "insertNotificationEvent HTTP-Fehler ${it.code}"
+                        )
+                    } else {
+                        Log.d(
+                            TAG,
+                            "insertNotificationEvent OK"
+                        )
+                    }
+                }
+            }
+        })
+    }
+
     // ── Live-Status ───────────────────────────────────────────────────────────
 
     fun updateLastSeen(deviceId: String) {
