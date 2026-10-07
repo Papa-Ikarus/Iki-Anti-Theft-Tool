@@ -152,6 +152,15 @@
   </div>
 </div>
 
+<div class="card">
+  <h3>🔔 Benachrichtigungen</h3>
+
+  <div id="notification-events-list">
+    <em style="color:#94a3b8;font-size:13px;">
+      Gerät auswählen…
+    </em>
+  </div>
+</div>
 
   <div class="card">
     <h3>Tagesberichte</h3>
@@ -1090,6 +1099,9 @@ async function focusLatestLocation(deviceId) {
       document.getElementById("status").textContent = `Gerät: ${deviceId}`;
       loadReports();
       loadUsageStats();
+      loadReports();
+      loadUsageStats();
+      loadNotificationEvents();
       loadLocationHistory(deviceId);
     };
 
@@ -1422,6 +1434,7 @@ window.refreshDashboard = async function () {
     await loadDevices();
     await loadReports();
     await loadUsageStats();
+    await loadNotificationEvents();
     await loadLocationHistory(selectedDevice);
 
     document.getElementById("status").textContent =
@@ -1588,13 +1601,111 @@ async function loadUsageStats() {
         </div>
       </div>
     `;
-  }).join("");
-}
+     }).join("");
+    }
 
+    // ── Benachrichtigungsverlauf ──────────────────────────────────────────────
 
+    async function loadNotificationEvents() {
+      if (!selectedDevice) return;
+
+      const requestDevice = selectedDevice;
+      const list = document.getElementById("notification-events-list");
+
+      if (!list) return;
+
+      list.innerHTML =
+        '<em style="color:#94a3b8;font-size:13px;">Wird geladen…</em>';
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (!session?.access_token) {
+          throw new Error("Keine gültige Sitzung");
+        }
+
+        const response = await fetch(
+          "https://ywrhhuhadgtmdzldbawa.supabase.co/functions/v1/notification-history",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${session.access_token}`,
+              "apikey": SUPABASE_ANON_KEY
+            },
+            body: JSON.stringify({
+              deviceId: requestDevice,
+            }),
+          }
+        );
+
+        if (selectedDevice !== requestDevice) return;
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          console.error(
+            "Benachrichtigungen konnten nicht geladen werden:",
+            response.status,
+            error
+          );
+
+          list.innerHTML =
+            '<em style="color:#dc2626;font-size:13px;">Benachrichtigungen konnten nicht geladen werden.</em>';
+          return;
+        }
+
+        const result = await response.json();
+        const data = result.notifications;
+
+        if (!Array.isArray(data) || !data.length) {
+          list.innerHTML =
+            '<em style="color:#94a3b8;font-size:13px;">Keine Benachrichtigungsereignisse vorhanden.</em>';
+          return;
+        }
+
+        list.replaceChildren();
+
+        const fragment = document.createDocumentFragment();
+
+        for (const item of data) {
+          const timestamp = Number(item.post_timestamp);
+
+          const time = Number.isFinite(timestamp)
+            ? new Date(timestamp).toLocaleString("de-DE")
+            : "Unbekannter Zeitpunkt";
+
+          const row = document.createElement("div");
+          row.className = "report-item";
+
+          const app = document.createElement("strong");
+          app.textContent =
+            item.app_name || item.package_name || "Unbekannte App";
+
+          const meta = document.createElement("div");
+          meta.className = "report-meta";
+          meta.textContent = time;
+
+          row.append(app, meta);
+          fragment.append(row);
+        }
+
+        list.append(fragment);
+      } catch (error) {
+        console.error(
+          "Benachrichtigungen konnten nicht geladen werden:",
+          error
+        );
+
+        list.innerHTML =
+          '<em style="color:#dc2626;font-size:13px;">Benachrichtigungen konnten nicht geladen werden.</em>';
+      }
+    }
 
     // ── Tagesberichte ────────────────────────────────────────────────────────
     async function loadReports() {
+
       if (!selectedDevice) return;
       const requestDevice = selectedDevice;
       const requested = new URLSearchParams(location.search);

@@ -40,3 +40,5 @@ command-ack-offline-test.log
 
 # Local Supabase CLI state
 supabase/.branches/
+
+supabase/.env.local
